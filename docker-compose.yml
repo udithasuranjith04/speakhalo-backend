@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: speakhalo-postgres
+    environment:
+      POSTGRES_DB: speakhalo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - speakhalo-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: speakhalo-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - speakhalo-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: speakhalo-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=speakhalo;Username=postgres;Password=postgres
+      - Jwt__SecretKey=${JWT_SECRET_KEY}
+      - OpenAI__ApiKey=${OPENAI_API_KEY}
+      - Twilio__AccountSid=${TWILIO_ACCOUNT_SID}
+      - Twilio__AuthToken=${TWILIO_AUTH_TOKEN}
+      - SendGrid__ApiKey=${SENDGRID_API_KEY}
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - speakhalo-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  speakhalo-network:
+    driver: bridge

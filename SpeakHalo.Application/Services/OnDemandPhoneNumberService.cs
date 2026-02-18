@@ -1,0 +1,236 @@
+using Microsoft.Extensions.Logging;
+using SpeakHalo.Application.Interfaces;
+using SpeakHalo.Application.Exceptions;
+using SpeakHalo.Domain.Entities;
+using SpeakHalo.Domain.Interfaces.Repositories;
+
+namespace SpeakHalo.Application.Services;
+
+/// <summary>
+/// Production-ready on-demand phone number purchasing service
+/// Purchases numbers from Twilio ONLY when user registers
+/// NO pre-provisioning, NO fake numbers, REAL production implementation
+/// </summary>
+public class OnDemandPhoneNumberService
+{
+    private readonly ITwilioService _twilioService;
+    private readonly IPhoneNumberRepository _phoneNumberRepo;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<OnDemandPhoneNumberService> _logger;
+    private const int MAX_RETRIES = 3;
+
+    public OnDemandPhoneNumberService(
+        ITwilioService twilioService,
+        IPhoneNumberRepository phoneNumberRepo,
+        IUnitOfWork unitOfWork,
+        ILogger<OnDemandPhoneNumberService> logger)
+    {
+        _twilioService = twilioService;
+        _phoneNumberRepo = phoneNumberRepo;
+        _unitOfWork = unitOfWork;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Purchase and assign phone number to user during registration
+    /// This is called ONCE per user, at registration time
+    /// </summary>
+    public async Task<(bool Success, PhoneNumber? PhoneNumber, string? ErrorMessage)>
+        PurchaseAndAssignNumberAsync(
+            string userId,
+            string countryCode,
+            CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Starting on-demand phone number purchase for user {UserId}, country: {Country}",
+            userId, countryCode);
+
+        try
+        {
+            // Step 1: Check if user already has a number
+            var existingNumbers = await _phoneNumberRepo.GetByUserIdAsync(userId, cancellationToken);
+            if (existingNumbers.Any())
+            {
+                _logger.LogWarning("User {UserId} already has {Count} phone number(s)", userId, existingNumbers.Count);
+                return (false, null, "User already has a phone number assigned");
+            }
+
+            // Step 2: Purchase number from Twilio with retry logic (exponential backoff)
+            TwilioPhoneNumberResult? twilioNumber = null;
+            Exception? lastException = null;
+
+            for (int attempt = 1; attempt <= MAX_RETRIES; attempt++)
+            {
+                try
+                {
+                    _logger.LogInformation("Calling Twilio API to purchase {Country} number (attempt {Attempt}/{Max})",
+                        countryCode, attempt, MAX_RETRIES);
+
+                    twilioNumber = await _twilioService.PurchasePhoneNumberAsync(new PurchasePhoneNumberOptions
+                    {
+                        CountryCode = countryCode,
+                        VoiceEnabled = true,
+                        SmsEnabled = true,
+                        MmsEnabled = true,
+                        Capabilities = PhoneNumberCapabilities.Voice | PhoneNumberCapabilities.SMS
+                    }, cancellationToken);
+
+                    break; // Success, exit retry loop
+                }
+                catch (Exception ex) when (IsTransientError(ex) && attempt < MAX_RETRIES)
+                {
+                    lastException = ex;
+                    var delaySeconds = Math.Pow(2, attempt); // Exponential backoff: 2s, 4s, 8s
+                    _logger.LogWarning(ex, "Retry {Attempt}/{Max} after {Delay}s due to transient error",
+                        attempt, MAX_RETRIES, delaySeconds);
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    // Non-transient error or last retry failed
+                    lastException = ex;
+                    break;
+                }
+            }
+
+            if (lastException != null && twilioNumber == null)
+            {
+                throw lastException; // Re-throw to be caught by outer catch blocks
+            }
+
+            if (twilioNumber == null)
+            {
+                _logger.LogError("Twilio returned null when purchasing {Country} number", countryCode);
+                return (false, null, $"No phone numbers available for country: {countryCode}. Please try again or contact support.");
+            }
+
+            _logger.LogInformation(
+                "Successfully purchased number {Number} (SID: {Sid}) from Twilio",
+                twilioNumber.PhoneNumber, twilioNumber.Sid);
+
+            // Step 3: Create PhoneNumber entity and assign to user
+            var phoneNumber = new PhoneNumber
+            {
+                UserId = userId,
+                Number = twilioNumber.PhoneNumber,
+                TwilioSid = twilioNumber.Sid,
+                CountryCode = countryCode,
+                FriendlyName = $"Business Number ({countryCode})",
+                IsPrimary = true,
+                VoiceEnabled = true,
+                SmsEnabled = true,
+                WhatsAppEnabled = true,
+                WhatsAppVerified = false,
+                AssignedAt = DateTime.UtcNow,
+                AssignmentMethod = "OnDemand",
+                IsActive = true
+            };
+
+            await _phoneNumberRepo.AddAsync(phoneNumber, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "Phone number {Number} successfully assigned to user {UserId}",
+                phoneNumber.Number, userId);
+
+            // Step 4: Configure number for WhatsApp (optional, can be done later)
+            try
+            {
+                await _twilioService.ConfigureNumberForWhatsAppAsync(twilioNumber.Sid, cancellationToken);
+                _logger.LogInformation("WhatsApp configured for number {Number}", phoneNumber.Number);
+            }
+            catch (Exception ex)
+            {
+                // WhatsApp configuration is not critical, log and continue
+                _logger.LogWarning(ex, "Failed to configure WhatsApp for {Number}, can be done later", phoneNumber.Number);
+            }
+
+            return (true, phoneNumber, null);
+        }
+        catch (TwilioRateLimitException ex)
+        {
+            _logger.LogError(ex, "Twilio rate limit exceeded for user {UserId}", userId);
+            return (false, null, "Too many requests. Please try again in a few moments.");
+        }
+        catch (TwilioNoNumbersAvailableException ex)
+        {
+            _logger.LogError(ex, "No {Country} numbers available from Twilio", countryCode);
+            return (false, null, $"No phone numbers available for {countryCode}. Please try a different country or contact support.");
+        }
+        catch (TwilioRegulatoryComplianceException ex)
+        {
+            _logger.LogError(ex, "Regulatory compliance required for {Country}", countryCode);
+            return (false, null, $"Phone numbers in {countryCode} require additional verification. Please contact support.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error purchasing phone number for user {UserId}", userId);
+            return (false, null, "An error occurred while setting up your phone number. Please try again or contact support.");
+        }
+    }
+
+    /// <summary>
+    /// Check if error is transient and should be retried
+    /// </summary>
+    private bool IsTransientError(Exception ex)
+    {
+        // Retry on:
+        // - Network timeouts
+        // - Twilio 429 (rate limit) - will succeed after backoff
+        // - Twilio 503 (service unavailable) - temporary
+        // - Twilio 500 (internal server error) - might be transient
+
+        if (ex is TwilioRateLimitException) return true;
+        if (ex is TwilioServiceUnavailableException) return true;
+        if (ex is HttpRequestException) return true;
+        if (ex is TaskCanceledException) return true;
+
+        // Do NOT retry on:
+        // - 400 (bad request) - won't succeed
+        // - 404 (not found) - won't succeed
+        // - No numbers available - won't succeed
+        // - Regulatory issues - won't succeed
+
+        return false;
+    }
+
+    /// <summary>
+    /// Get available countries for phone number purchase
+    /// </summary>
+    public async Task<List<string>> GetAvailableCountriesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await _twilioService.GetAvailablePhoneNumberCountriesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching available countries from Twilio");
+            // Return common countries as fallback
+            return new List<string> { "US", "CA", "GB", "AU", "IE" };
+        }
+    }
+
+    /// <summary>
+    /// Check if phone numbers are available in a country before registration
+    /// (Optional pre-check to improve UX)
+    /// </summary>
+    public async Task<bool> AreNumbersAvailableAsync(string countryCode, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var available = await _twilioService.SearchAvailablePhoneNumbersAsync(
+                countryCode,
+                limit: 1,
+                cancellationToken);
+
+            return available.Any();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error checking availability for {Country}", countryCode);
+            // Assume available if check fails
+            return true;
+        }
+    }
+}
