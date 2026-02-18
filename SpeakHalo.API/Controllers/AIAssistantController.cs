@@ -12,11 +12,6 @@ using System.Security.Claims;
 
 namespace SpeakHalo.API.Controllers;
 
-/// <summary>
-/// AI Assistant API
-/// Provides intelligent product knowledge and customer support using Gemini
-/// Manages conversation context, training data, and product knowledge base
-/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/ai-assistant")]
@@ -47,10 +42,6 @@ public class AIAssistantController : ControllerBase
         return items.Any();
     }
 
-    /// <summary>
-    /// Generate AI response to user message
-    /// Uses product knowledge and conversation context for accurate, contextual responses
-    /// </summary>
     [HttpPost("chat")]
     [ProducesResponseType(typeof(AIResponse), 200)]
     [ProducesResponseType(400)]
@@ -70,16 +61,11 @@ public class AIAssistantController : ControllerBase
             return BadRequest(result);
         }
 
-        // Track AI minutes usage (1 minute per chat interaction)
         await _usageTracking.TrackAIMinutesAsync(userId, 1);
 
         return Ok(result);
     }
 
-    /// <summary>
-    /// Get or create conversation context
-    /// Maintains conversation state and history for multi-turn interactions
-    /// </summary>
     [HttpGet("context/{conversationId}")]
     [ProducesResponseType(typeof(AIConversationContextResponse), 200)]
     [ProducesResponseType(400)]
@@ -103,10 +89,6 @@ public class AIAssistantController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Update conversation context
-    /// Updates intent, topic, issue details, and photo analysis results
-    /// </summary>
     [HttpPatch("context/{contextId}")]
     [ProducesResponseType(typeof(bool), 200)]
     [ProducesResponseType(400)]
@@ -135,10 +117,6 @@ public class AIAssistantController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Search product knowledge base
-    /// Finds relevant SpeakHalo product information, features, pricing, and workflows
-    /// </summary>
     [HttpGet("knowledge/search")]
     [ProducesResponseType(typeof(List<ProductKnowledgeResponse>), 200)]
     [ProducesResponseType(400)]
@@ -153,7 +131,6 @@ public class AIAssistantController : ControllerBase
             return BadRequest(result);
         }
 
-        // Map to response DTOs
         var responses = result.Data?.Select(k => new ProductKnowledgeResponse
         {
             Id = k.Id,
@@ -172,10 +149,6 @@ public class AIAssistantController : ControllerBase
         return Ok(responses);
     }
 
-    /// <summary>
-    /// Record AI training example
-    /// Captures successful and failed interactions for continuous AI improvement
-    /// </summary>
     [HttpPost("training")]
     [ProducesResponseType(typeof(AITrainingExampleResponse), 201)]
     [ProducesResponseType(400)]
@@ -214,10 +187,6 @@ public class AIAssistantController : ControllerBase
         );
     }
 
-    /// <summary>
-    /// Get common product questions
-    /// Returns frequently asked questions about SpeakHalo features and pricing
-    /// </summary>
     [HttpGet("knowledge/common-questions")]
     [AllowAnonymous] // Allow public access for FAQ pages
     [ProducesResponseType(typeof(List<ProductKnowledgeResponse>), 200)]
@@ -227,8 +196,6 @@ public class AIAssistantController : ControllerBase
     {
         try
         {
-            // This would need to be added to the service interface and implementation
-            // For now, search for common questions
             var result = await _aiAssistantService.SearchKnowledgeAsync("", cancellationToken);
 
             if (!result.IsSuccess || result.Data == null)

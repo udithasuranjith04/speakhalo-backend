@@ -28,16 +28,14 @@ public class CallerRecognitionService : ICallerRecognitionService
 
         try
         {
-            // Normalize phone first for consistent cache keys
             var normalizedPhone = phone.Replace("whatsapp:", "").Trim();
 
-            // Check cache first — same caller within 5 min gets instant recognition
+            // Same caller within 5 min gets instant recognition via cache
             var cacheKey = $"caller:{userId}:{normalizedPhone}";
             var cached = await _cache.GetAsync<RecognizedCaller>(cacheKey, ct);
             if (cached != null)
                 return cached;
 
-            // Check if business owner has opted into caller recognition
             var profiles = await _unitOfWork.Repository<UserProfile>()
                 .FindAsync(p => p.UserId == userId, ct);
             var profile = profiles.FirstOrDefault();
@@ -45,7 +43,6 @@ public class CallerRecognitionService : ICallerRecognitionService
             if (profile == null || !profile.CallerRecognitionEnabled)
                 return null;
 
-            // Run all 4 independent lookups in parallel for minimum latency
             var customerTask = _unitOfWork.Repository<Customer>()
                 .FindAsync(c => c.UserId == userId && c.Phone == normalizedPhone && !c.IsDeleted, ct);
             var callHistoryTask = BuildCallHistoryAsync(userId, normalizedPhone, ct);
@@ -59,7 +56,6 @@ public class CallerRecognitionService : ICallerRecognitionService
             var whatsAppHistory = await whatsAppHistoryTask;
             var smsHistory = await smsHistoryTask;
 
-            // 5. Appointments (only if customer exists — appointments are linked by CustomerId)
             var upcomingAppointments = new List<CallerAppointmentInfo>();
             var pastAppointments = new List<CallerAppointmentInfo>();
             string? lastServiceType = null;
@@ -94,7 +90,6 @@ public class CallerRecognitionService : ICallerRecognitionService
                     }
                 }
 
-                // Last service from most recent completed appointment
                 var lastCompleted = appointments
                     .Where(a => a.Status == AppointmentStatus.Completed)
                     .OrderByDescending(a => a.CompletedAt ?? a.ScheduledAt)
@@ -107,7 +102,6 @@ public class CallerRecognitionService : ICallerRecognitionService
                 }
             }
 
-            // Return null ONLY if there's zero history AND no customer record
             bool hasAnyHistory = customer != null
                 || callHistory.TotalCalls > 0
                 || whatsAppHistory.ConversationCount > 0
@@ -135,7 +129,6 @@ public class CallerRecognitionService : ICallerRecognitionService
                 PastAppointments: pastAppointments
             );
 
-            // Cache for 5 minutes — repeat callers get instant recognition
             await _cache.SetAsync(cacheKey, result, CallerCacheTtl, ct);
 
             return result;

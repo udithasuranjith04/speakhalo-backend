@@ -1,6 +1,6 @@
-# SpeakHalo - AI-Powered Voice Call Management for Cleaning Businesses
+# SpeakHalo - AI-Powered Voice Call Management for Home Service Businesses
 
-SpeakHalo is an AI-powered voice call management platform built with .NET 8, designed exclusively for cleaning service businesses (residential, commercial, deep clean, move-in/out, carpet, post-construction).
+SpeakHalo is an AI-powered voice call management platform built with .NET 8, designed for home service businesses (HVAC, cleaning, plumbing, electrical, landscaping, pest control, handyman, roofing).
 
 ## Features
 
@@ -123,10 +123,7 @@ Admin controls all user accounts:
 
 ## Documentation
 
-- [Production Setup Guide](./docs/PRODUCTION_SETUP.md)
 - [Secrets Management](./docs/SECRETS_MANAGEMENT.md)
-- [Twilio Phone Numbers](./docs/TWILIO_PHONE_NUMBERS.md)
-- [API Documentation](./docs/API_DOCUMENTATION.md)
 
 ## License
 

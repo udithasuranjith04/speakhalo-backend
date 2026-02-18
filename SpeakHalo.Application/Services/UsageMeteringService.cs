@@ -156,8 +156,6 @@ public class UsageMeteringService : IUsageMeteringService
     {
         try
         {
-            var currentPeriod = await GetOrCreateCurrentPeriodAsync(userId, cancellationToken);
-
             var newPeriod = new UsageCosts
             {
                 UserId = userId,

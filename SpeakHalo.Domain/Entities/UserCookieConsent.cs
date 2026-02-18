@@ -92,7 +92,6 @@ public class UserCookieConsent : BaseEntity
     /// </summary>
     public string? Metadata { get; set; }
 
-    // Navigation properties
     public virtual User? User { get; set; }
     public virtual CookiePolicy? Policy { get; set; }
 }

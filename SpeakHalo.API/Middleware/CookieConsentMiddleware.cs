@@ -4,10 +4,6 @@ using System.Security.Claims;
 
 namespace SpeakHalo.API.Middleware;
 
-/// <summary>
-/// Enterprise-level middleware for automatic cookie consent validation
-/// Checks consent before allowing requests to protected endpoints
-/// </summary>
 public class CookieConsentMiddleware
 {
     private readonly RequestDelegate _next;
@@ -26,14 +22,12 @@ public class CookieConsentMiddleware
 
     public async Task InvokeAsync(HttpContext context, CookieManagementService cookieService)
     {
-        // Skip if middleware is disabled
         if (!_options.Enabled)
         {
             await _next(context);
             return;
         }
 
-        // Skip for excluded paths
         var path = context.Request.Path.Value?.ToLower() ?? "";
         if (_options.ExcludedPaths.Any(p => path.StartsWith(p.ToLower())))
         {
@@ -41,10 +35,8 @@ public class CookieConsentMiddleware
             return;
         }
 
-        // Get required consent category for this endpoint
         var requiredConsent = GetRequiredConsentForPath(path);
 
-        // If no consent required, continue
         if (requiredConsent == null)
         {
             await _next(context);
@@ -53,17 +45,14 @@ public class CookieConsentMiddleware
 
         try
         {
-            // Get user ID (authenticated or anonymous)
             var userId = context.User.Identity?.IsAuthenticated == true
                 ? context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                 : null;
 
-            // Check if user has required consent
             var hasConsent = await cookieService.HasConsentAsync(userId, requiredConsent.Value);
 
             if (!hasConsent)
             {
-                // Log consent violation
                 _logger.LogWarning(
                     "Consent required: {Category} for path {Path}. User: {UserId}, IP: {IP}",
                     requiredConsent.Value,
@@ -71,7 +60,6 @@ public class CookieConsentMiddleware
                     userId ?? "anonymous",
                     context.Connection.RemoteIpAddress?.ToString());
 
-                // Return 403 Forbidden with consent requirement information
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 context.Response.ContentType = "application/json";
 
@@ -87,31 +75,25 @@ public class CookieConsentMiddleware
                 return;
             }
 
-            // Add consent status to response headers (for debugging/monitoring)
             if (_options.AddConsentHeaders)
             {
                 context.Response.Headers.Append("X-Consent-Category", requiredConsent.Value.ToString());
                 context.Response.Headers.Append("X-Consent-Status", "granted");
             }
 
-            // Continue to next middleware
             await _next(context);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error checking cookie consent for path {Path}", path);
 
-            // On error, continue (fail open) but log the issue
+            // Fail open: allow the request through on consent-check errors
             await _next(context);
         }
     }
 
-    /// <summary>
-    /// Determine which consent category is required for a given path
-    /// </summary>
     private CookieCategory? GetRequiredConsentForPath(string path)
     {
-        // Check custom path rules first
         foreach (var rule in _options.PathConsentRules)
         {
             if (path.StartsWith(rule.Key.ToLower()))
@@ -120,27 +102,21 @@ public class CookieConsentMiddleware
             }
         }
 
-        // Default rules based on path patterns
         if (_options.UseDefaultRules)
         {
-            // Analytics endpoints
             if (path.Contains("/analytics") || path.Contains("/metrics"))
                 return CookieCategory.Analytics;
 
-            // Marketing endpoints
             if (path.Contains("/campaigns") || path.Contains("/marketing"))
                 return CookieCategory.Marketing;
 
-            // Performance monitoring
             if (path.Contains("/performance") || path.Contains("/monitoring"))
                 return CookieCategory.Performance;
 
-            // Social media integrations
             if (path.Contains("/social") || path.Contains("/share"))
                 return CookieCategory.SocialMedia;
         }
 
-        // No consent required for this path
         return null;
     }
 }

@@ -2,19 +2,13 @@ using SpeakHalo.Domain.Enums;
 
 namespace SpeakHalo.Domain.Entities;
 
-/// <summary>
-/// Core User entity (Aggregate Root)
-/// Related data is now in separate entities for better organization
-/// </summary>
 public class User : BaseEntity
 {
-    // Core Identity
     public string Name { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public UserRole Role { get; set; } = UserRole.Owner;
     public bool IsActive { get; set; } = true;
 
-    // Legacy fields kept for backward compatibility (will be migrated to related entities)
     [Obsolete("Use UserAuth.HashedPassword instead")]
     public string HashedPassword { get; set; } = string.Empty;
 
@@ -210,14 +204,12 @@ public class User : BaseEntity
     [Obsolete("Use UserSubscription.PricingNotifiedAt instead")]
     public DateTime? PricingNotifiedAt { get; set; }
 
-    // Navigation Properties to Related Entities
     public virtual UserAuth? Auth { get; set; }
     public virtual UserProfile? Profile { get; set; }
     public virtual UserSubscription? Subscription { get; set; }
     public virtual UserTrial? Trial { get; set; }
     public virtual UserAdmin? Admin { get; set; }
 
-    // Existing Navigation Properties
     public virtual ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
     public virtual ICollection<PhoneNumber> PhoneNumbers { get; set; } = new List<PhoneNumber>();
 }

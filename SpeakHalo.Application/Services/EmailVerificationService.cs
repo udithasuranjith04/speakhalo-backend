@@ -48,7 +48,6 @@ public class EmailVerificationService : IEmailVerificationService
             return Result.Failure("Email already verified");
         }
 
-        // Generate cryptographically secure verification token
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         // Store SHA-256 hash — never store plaintext tokens in the database
         userAuth.EmailVerificationToken = HashToken(token);
@@ -57,13 +56,11 @@ public class EmailVerificationService : IEmailVerificationService
         _unitOfWork.Repository<UserAuth>().Update(userAuth);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // Build verification link
         var frontendUrl = _configuration["Frontend:BaseUrl"]
             ?? _configuration["Application:FrontendUrl"]
             ?? throw new InvalidOperationException("Frontend:BaseUrl or Application:FrontendUrl must be configured");
         var verificationLink = $"{frontendUrl}/verify-email?token={token}";
 
-        // Send email
         var subject = "Verify Your SpeakHalo Account";
         var body = $@"
             <h2>Welcome to SpeakHalo, {System.Net.WebUtility.HtmlEncode(name)}!</h2>
@@ -119,7 +116,6 @@ public class EmailVerificationService : IEmailVerificationService
             return Result.Failure("Verification token has expired. Please request a new one.");
         }
 
-        // Mark email as verified
         userAuth.EmailVerified = true;
         userAuth.EmailVerifiedAt = DateTime.UtcNow;
         userAuth.EmailVerificationToken = null;

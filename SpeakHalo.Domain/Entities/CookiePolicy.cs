@@ -80,6 +80,5 @@ public class CookiePolicy : BaseEntity
     /// </summary>
     public string? Metadata { get; set; }
 
-    // Navigation properties
     public virtual ICollection<UserCookieConsent> UserConsents { get; set; } = new List<UserCookieConsent>();
 }

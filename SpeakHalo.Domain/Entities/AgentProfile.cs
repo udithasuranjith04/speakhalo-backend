@@ -14,13 +14,11 @@ public class AgentProfile : BaseEntity
     public bool TransferOnComplexIssues { get; set; } = true;
     public string? CustomInstructions { get; set; }
 
-    // Custom branding (Growth/Business plans)
     public string? BrandName { get; set; }
     public string? BrandTagline { get; set; }
     public string? BrandColor { get; set; }
     public string? LogoUrl { get; set; }
 
-    // AI behavior settings
     public bool EnableTroubleshooting { get; set; } = true;
 
     public virtual User User { get; set; } = null!;

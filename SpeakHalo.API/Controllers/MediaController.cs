@@ -11,11 +11,6 @@ using SpeakHalo.Domain.Interfaces.Repositories;
 
 namespace SpeakHalo.API.Controllers;
 
-/// <summary>
-/// Media File Management API
-/// Handles WhatsApp media (images, videos, documents, audio)
-/// Provides download, upload, storage, processing, and AI analysis
-/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/media")]
@@ -39,10 +34,6 @@ public class MediaController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Download media from Twilio WhatsApp URL and store it
-    /// Automatically processes images with AI vision analysis
-    /// </summary>
     [HttpPost("download")]
     [ProducesResponseType(typeof(MediaDownloadResult), 200)]
     [ProducesResponseType(400)]
@@ -60,7 +51,6 @@ public class MediaController : ControllerBase
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-        // Override UserId from request with authenticated user's ID
         var securedRequest = request with { UserId = userId };
 
         var result = await _mediaService.DownloadAndStoreMediaAsync(securedRequest, cancellationToken);
@@ -70,7 +60,6 @@ public class MediaController : ControllerBase
             return BadRequest(result);
         }
 
-        // Track image analysis usage after successful AI processing
         if (request.ProcessWithAI)
         {
             await _usageTracking.TrackImageAnalysisAsync(userId, securedRequest.MediaUrl ?? "");
@@ -79,10 +68,6 @@ public class MediaController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Upload media file directly
-    /// For sending media through WhatsApp or storing user uploads
-    /// </summary>
     [HttpPost("upload")]
     [ProducesResponseType(typeof(MediaUploadResult), 200)]
     [ProducesResponseType(400)]
@@ -123,10 +108,6 @@ public class MediaController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Get media file by ID
-    /// Returns media metadata and access URLs
-    /// </summary>
     [HttpGet("{mediaFileId}")]
     [ProducesResponseType(typeof(MediaFileResponse), 200)]
     [ProducesResponseType(404)]
@@ -151,10 +132,6 @@ public class MediaController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Get all media files for a conversation
-    /// Optional filter by media type (Image, Video, Document, Audio)
-    /// </summary>
     [HttpGet("conversation/{conversationId}")]
     [ProducesResponseType(typeof(List<MediaFileResponse>), 200)]
     public async Task<IActionResult> GetConversationMedia(
@@ -164,7 +141,6 @@ public class MediaController : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-        // Verify the conversation belongs to the authenticated user
         var conversationOwned = await _unitOfWork.Repository<WhatsAppConversation>()
             .AnyAsync(c => c.Id == conversationId && c.UserId == userId, cancellationToken);
 
@@ -183,10 +159,6 @@ public class MediaController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Get all media files for the authenticated user
-    /// Optional filter by media type and limit
-    /// </summary>
     [HttpGet("user")]
     [ProducesResponseType(typeof(List<MediaFileResponse>), 200)]
     public async Task<IActionResult> GetUserMedia(
@@ -206,10 +178,6 @@ public class MediaController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Generate temporary public URL for media file
-    /// Default expiration: 1 hour
-    /// </summary>
     [HttpPost("{mediaFileId}/public-url")]
     [ProducesResponseType(typeof(PublicUrlResult), 200)]
     [ProducesResponseType(404)]
@@ -246,10 +214,6 @@ public class MediaController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Process media file (thumbnail, AI analysis, metadata extraction)
-    /// For images: generates thumbnail and runs vision AI analysis
-    /// </summary>
     [HttpPost("{mediaFileId}/process")]
     [RequireFeature(PlanFeature.AIPhotoQuotes)]
     [ProducesResponseType(typeof(MediaProcessingResult), 200)]
@@ -286,7 +250,6 @@ public class MediaController : ControllerBase
             return NotFound(result);
         }
 
-        // Track image analysis usage after successful AI processing
         if (processRequest.AnalyzeWithVision)
         {
             await _usageTracking.TrackImageAnalysisAsync(userId, mediaFileId);
@@ -295,10 +258,6 @@ public class MediaController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Get storage statistics for the authenticated user
-    /// Shows total storage used, file counts by type, and quota information
-    /// </summary>
     [HttpGet("stats")]
     [ProducesResponseType(typeof(MediaStorageStats), 200)]
     public async Task<IActionResult> GetStorageStats(
@@ -316,10 +275,6 @@ public class MediaController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Delete media file
-    /// Removes file from storage and database
-    /// </summary>
     [HttpDelete("{mediaFileId}")]
     [ProducesResponseType(typeof(bool), 200)]
     [ProducesResponseType(404)]
@@ -344,10 +299,6 @@ public class MediaController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Flag media for review
-    /// Marks media as requiring human review (inappropriate content, quality issues, etc.)
-    /// </summary>
     [HttpPost("{mediaFileId}/flag")]
     [ProducesResponseType(typeof(bool), 200)]
     [ProducesResponseType(404)]
@@ -373,10 +324,6 @@ public class MediaController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Get flagged media files
-    /// Returns all media flagged for review (admin only)
-    /// </summary>
     [HttpGet("flagged")]
     [Authorize(Roles = "Admin,SuperAdmin")]
     [ProducesResponseType(typeof(List<MediaFileResponse>), 200)]
@@ -393,10 +340,6 @@ public class MediaController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Process pending media downloads (admin/background job)
-    /// Downloads and processes media that was queued but not yet downloaded
-    /// </summary>
     [HttpPost("process-pending")]
     [Authorize(Roles = "Admin,SuperAdmin")]
     [ProducesResponseType(typeof(int), 200)]
@@ -414,10 +357,6 @@ public class MediaController : ControllerBase
         return Ok(new { ProcessedCount = result.Data });
     }
 
-    /// <summary>
-    /// Cleanup old media files (admin/background job)
-    /// Deletes media files older than specified days
-    /// </summary>
     [HttpPost("cleanup")]
     [Authorize(Roles = "Admin,SuperAdmin")]
     [ProducesResponseType(typeof(int), 200)]
@@ -435,9 +374,6 @@ public class MediaController : ControllerBase
         return Ok(new { DeletedCount = result.Data });
     }
 
-    /// <summary>
-    /// Checks if the authenticated user owns the specified media file
-    /// </summary>
     private async Task<bool> UserOwnsMediaAsync(string mediaFileId, string userId)
     {
         var items = await _unitOfWork.Repository<MediaFile>().FindAsync(m => m.Id == mediaFileId && m.UserId == userId);

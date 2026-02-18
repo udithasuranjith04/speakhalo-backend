@@ -43,9 +43,6 @@ public class VoiceAgentController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Create a new voice agent configuration
-    /// </summary>
     [HttpPost]
     public async Task<IActionResult> CreateAgent(
         [FromBody] CreateVoiceAgentRequest request,
@@ -54,8 +51,6 @@ public class VoiceAgentController : ControllerBase
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
-
-        // All active users have all features including multi-location (admin controls limits)
 
         var agent = new VoiceAgent
         {
@@ -91,9 +86,6 @@ public class VoiceAgentController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Get voice agent configuration
-    /// </summary>
     [HttpGet("{agentId}")]
     public async Task<IActionResult> GetAgent(string agentId, CancellationToken cancellationToken)
     {
@@ -118,9 +110,6 @@ public class VoiceAgentController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// List voice agents for the current user
-    /// </summary>
     [HttpGet]
     public async Task<IActionResult> ListAgents(CancellationToken cancellationToken)
     {
@@ -146,9 +135,6 @@ public class VoiceAgentController : ControllerBase
         }));
     }
 
-    /// <summary>
-    /// Update voice agent configuration
-    /// </summary>
     [HttpPatch("{agentId}")]
     public async Task<IActionResult> UpdateAgent(
         string agentId,
@@ -188,9 +174,6 @@ public class VoiceAgentController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Delete voice agent configuration (soft delete)
-    /// </summary>
     [HttpDelete("{agentId}")]
     public async Task<IActionResult> DeleteAgent(string agentId, CancellationToken cancellationToken)
     {
@@ -209,9 +192,6 @@ public class VoiceAgentController : ControllerBase
         return Ok(new { agentId, deleted = true });
     }
 
-    /// <summary>
-    /// Initiate an outbound call using the voice agent
-    /// </summary>
     [HttpPost("{agentId}/call")]
     public async Task<IActionResult> InitiateOutboundCall(
         string agentId,
@@ -222,7 +202,6 @@ public class VoiceAgentController : ControllerBase
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
 
-        // Validate phone number format (E.164)
         if (string.IsNullOrWhiteSpace(request.ToNumber) ||
             !System.Text.RegularExpressions.Regex.IsMatch(request.ToNumber, @"^\+[1-9]\d{1,14}$"))
             return BadRequest(new { error = "Invalid phone number format. Must be E.164 format (e.g., +12025551234)" });
@@ -240,7 +219,6 @@ public class VoiceAgentController : ControllerBase
             var callerPhone = Uri.EscapeDataString(request.ToNumber);
             var mediaStreamUrl = $"wss://{new Uri(baseUrl).Host}/api/v1/voice-stream/{agentId}?callerPhone={callerPhone}";
 
-            // Recognize returning customer for outbound call
             string? customerId = null;
             var callerRecognition = HttpContext.RequestServices.GetService<ICallerRecognitionService>();
             if (callerRecognition != null)
@@ -250,7 +228,6 @@ public class VoiceAgentController : ControllerBase
                     customerId = recognized.CustomerId;
             }
 
-            // Create call record
             var call = new Call
             {
                 UserId = userId,
@@ -283,9 +260,6 @@ public class VoiceAgentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Get call details
-    /// </summary>
     [HttpGet("calls/{callId}")]
     public async Task<IActionResult> GetCallDetails(
         string callId,
@@ -310,9 +284,6 @@ public class VoiceAgentController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Get custom branding for the current user's agent profile
-    /// </summary>
     [HttpGet("branding")]
     [RequireFeature(PlanFeature.CustomBranding)]
     public async Task<IActionResult> GetBranding(CancellationToken cancellationToken)
@@ -343,9 +314,6 @@ public class VoiceAgentController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Update custom branding for the current user's agent profile
-    /// </summary>
     [HttpPut("branding")]
     [RequireFeature(PlanFeature.CustomBranding)]
     public async Task<IActionResult> UpdateBranding(
@@ -360,7 +328,6 @@ public class VoiceAgentController : ControllerBase
 
         if (profile == null)
         {
-            // Create a new agent profile with branding
             profile = new AgentProfile
             {
                 UserId = userId,
@@ -409,9 +376,6 @@ public class VoiceAgentController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Get agent profile settings (troubleshooting toggle, custom instructions, etc.)
-    /// </summary>
     [HttpGet("settings")]
     public async Task<IActionResult> GetAgentSettings(CancellationToken cancellationToken)
     {
@@ -433,9 +397,6 @@ public class VoiceAgentController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Update agent profile settings (troubleshooting toggle, custom instructions, etc.)
-    /// </summary>
     [HttpPut("settings")]
     public async Task<IActionResult> UpdateAgentSettings(
         [FromBody] UpdateAgentSettingsRequest request,
@@ -505,9 +466,6 @@ public class VoiceAgentController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// List available Google Cloud TTS voices
-    /// </summary>
     [HttpGet("voices")]
     [AllowAnonymous]
     public IActionResult GetAvailableVoices()
@@ -630,7 +588,6 @@ public class CreateVoiceAgentRequest
     public string? BusinessName { get; set; }
     public string? Industry { get; set; }
 
-    // Multi-location
     public string? LocationName { get; set; }
     public string? LocationAddress { get; set; }
     public string? LocationPhone { get; set; }
@@ -643,7 +600,6 @@ public class UpdateVoiceAgentRequest
     public string? VoiceName { get; set; }
     public bool? IsActive { get; set; }
 
-    // Multi-location
     public string? LocationName { get; set; }
     public string? LocationAddress { get; set; }
     public string? LocationPhone { get; set; }

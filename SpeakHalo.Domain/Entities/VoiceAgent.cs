@@ -10,7 +10,6 @@ public class VoiceAgent : BaseEntity
     public int MaxCallDurationMinutes { get; set; } = 30;
     public bool IsActive { get; set; } = true;
 
-    // Multi-location support (Growth/Business plans)
     public string? LocationName { get; set; }
     public string? LocationAddress { get; set; }
     public string? LocationPhone { get; set; }

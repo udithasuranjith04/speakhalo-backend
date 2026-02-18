@@ -2,8 +2,8 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using SpeakHalo.Domain.Entities;
 using SpeakHalo.Domain.Interfaces.Repositories;
-using SpeakHalo.Domain.Models;
 using SpeakHalo.Infrastructure.Data;
+using SpeakHalo.Shared.Models;
 
 namespace SpeakHalo.Infrastructure.Repositories;
 
@@ -31,6 +31,9 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
 
     public virtual async Task<PaginatedList<T>> GetPagedAsync(int pageNumber = 1, int pageSize = 10, CancellationToken cancellationToken = default)
     {
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1) pageSize = 10;
+
         var totalCount = await _dbSet.CountAsync(cancellationToken);
 
         var items = await _dbSet
@@ -50,6 +53,9 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
 
     public virtual async Task<PaginatedList<T>> FindPagedAsync(Expression<Func<T, bool>> predicate, int pageNumber = 1, int pageSize = 10, CancellationToken cancellationToken = default)
     {
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1) pageSize = 10;
+
         var query = _dbSet.AsNoTracking().Where(predicate);
         var totalCount = await query.CountAsync(cancellationToken);
 
@@ -81,11 +87,8 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
 
     public virtual async Task<TResult?> SumAsync<TResult>(Expression<Func<T, TResult>> selector, CancellationToken cancellationToken = default)
     {
-        // Use reflection to call the appropriate SumAsync method based on the result type
         var query = _dbSet.AsNoTracking().Select(selector);
         var resultType = typeof(TResult);
-
-        // Handle nullable types
         var underlyingType = Nullable.GetUnderlyingType(resultType) ?? resultType;
 
         if (underlyingType == typeof(int))
@@ -170,7 +173,6 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
 
     public virtual void Remove(T entity)
     {
-        // Soft delete: mark as deleted instead of removing
         entity.IsDeleted = true;
         entity.DeletedAt = DateTime.UtcNow;
         _dbSet.Update(entity);
@@ -178,7 +180,6 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
 
     public virtual void RemoveRange(IEnumerable<T> entities)
     {
-        // Soft delete: mark all as deleted instead of removing
         foreach (var entity in entities)
         {
             entity.IsDeleted = true;
@@ -189,13 +190,11 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
 
     public virtual void HardDelete(T entity)
     {
-        // Permanent delete: actually remove from database
         _dbSet.Remove(entity);
     }
 
     public virtual void HardDeleteRange(IEnumerable<T> entities)
     {
-        // Permanent delete: actually remove from database
         _dbSet.RemoveRange(entities);
     }
 }

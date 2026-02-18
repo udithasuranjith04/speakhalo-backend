@@ -75,6 +75,5 @@ public class UsageWarning : BaseEntity
     /// </summary>
     public DateTime BillingMonth { get; set; } = DateTime.UtcNow;
 
-    // Navigation properties
     public virtual User User { get; set; } = null!;
 }

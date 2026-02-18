@@ -47,7 +47,6 @@ public class AIFollowUpService : IAIFollowUpService
                 };
             }
 
-            // Check if follow-up already exists
             var existingFollowUp = await _context.Set<CallFollowUp>()
                 .FirstOrDefaultAsync(f => f.CallId == callId);
 
@@ -61,11 +60,9 @@ public class AIFollowUpService : IAIFollowUpService
                 };
             }
 
-            // Generate the follow-up message
             var messageContent = await GenerateFollowUpMessageAsync(callId);
             var templateName = GetTemplateNameForOutcome(call.Outcome, call.AppointmentScheduled, call.QuoteRequested);
 
-            // Schedule the follow-up
             var scheduledFor = (call.EndedAt ?? DateTime.UtcNow).AddMinutes(delayMinutes);
 
             var followUp = new CallFollowUp
@@ -133,7 +130,6 @@ public class AIFollowUpService : IAIFollowUpService
             {
                 try
                 {
-                    // Check if user's account is active
                     var subscription = await _context.UserSubscriptions
                         .AsNoTracking()
                         .FirstOrDefaultAsync(s => s.UserId == followUp.UserId);
@@ -146,7 +142,6 @@ public class AIFollowUpService : IAIFollowUpService
                         continue;
                     }
 
-                    // Send via WhatsApp
                     var request = new SpeakHalo.Application.DTOs.SendWhatsAppMessageRequest
                     {
                         UserId = followUp.UserId,
@@ -228,7 +223,6 @@ public class AIFollowUpService : IAIFollowUpService
         var businessName = call.User?.BusinessName ?? "our team";
         var customerName = call.Customer?.Name ?? call.CallerName ?? "there";
 
-        // Generate message based on call outcome
         return call.Outcome switch
         {
             CallOutcome.Booked when call.AppointmentScheduled => GenerateAppointmentConfirmationMessage(businessName, customerName, call),
@@ -308,8 +302,6 @@ public class AIFollowUpService : IAIFollowUpService
 
         return result;
     }
-
-    // Template generation methods
 
     private string GenerateAppointmentConfirmationMessage(string businessName, string customerName, Call call)
     {

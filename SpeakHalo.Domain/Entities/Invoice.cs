@@ -21,7 +21,6 @@ public class Invoice : BaseEntity
 
     public string? Notes { get; set; }
 
-    // Concurrency token
     public uint RowVersion { get; set; }
 
     public virtual User User { get; set; } = null!;

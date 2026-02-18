@@ -36,8 +36,6 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
 
 var baseConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
-// Configure explicit connection pooling for optimal performance
-// Main connection - Multiplexing enabled for high performance API requests
 var mainConnectionBuilder = new Npgsql.NpgsqlConnectionStringBuilder(baseConnectionString)
 {
     Pooling = true,
@@ -48,14 +46,14 @@ var mainConnectionBuilder = new Npgsql.NpgsqlConnectionStringBuilder(baseConnect
     Timeout = 30,
     CommandTimeout = 30,
     NoResetOnClose = false,
-    Multiplexing = true,                // Handles 1000+ concurrent requests
+    Multiplexing = true,
     MaxAutoPrepare = 10,
     AutoPrepareMinUsages = 5
 };
 
 var connectionString = mainConnectionBuilder.ConnectionString;
 
-// Hangfire connection - Multiplexing disabled for compatibility
+// Hangfire requires multiplexing disabled
 var hangfireConnectionBuilder = new Npgsql.NpgsqlConnectionStringBuilder(baseConnectionString)
 {
     Pooling = true,
@@ -64,13 +62,13 @@ var hangfireConnectionBuilder = new Npgsql.NpgsqlConnectionStringBuilder(baseCon
     ConnectionIdleLifetime = 300,
     ConnectionPruningInterval = 10,
     Timeout = 30,
-    CommandTimeout = 120,               // Longer timeout for background jobs
+    CommandTimeout = 120,
     KeepAlive = 60,
     TcpKeepAlive = true,
     TcpKeepAliveInterval = 60,
     TcpKeepAliveTime = 60,
     NoResetOnClose = false,
-    Multiplexing = false,               // Required for Hangfire
+    Multiplexing = false,
     MaxAutoPrepare = 10,
     AutoPrepareMinUsages = 5
 };
@@ -79,8 +77,7 @@ var hangfireConnectionString = hangfireConnectionBuilder.ConnectionString;
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    // For EF migrations, use hangfire connection (multiplexing disabled)
-    // For runtime, use main connection (multiplexing enabled for performance)
+    // EF migrations require multiplexing disabled; runtime uses the main (multiplexing-enabled) connection
     var isDesignTime = AppDomain.CurrentDomain.GetAssemblies()
         .Any(a => a.FullName?.StartsWith("Microsoft.EntityFrameworkCore.Design") == true);
     var dbConnectionString = isDesignTime ? hangfireConnectionString : connectionString;
@@ -126,7 +123,6 @@ builder.Services.AddScoped<ICommonIssueRepository, CommonIssueRepository>();
 builder.Services.AddScoped<IPhoneNumberRepository, PhoneNumberRepository>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 
-// Cookie Management Repositories
 builder.Services.AddScoped<ICookieDefinitionRepository, CookieDefinitionRepository>();
 builder.Services.AddScoped<ICookiePolicyRepository, CookiePolicyRepository>();
 builder.Services.AddScoped<IUserCookieConsentRepository, UserCookieConsentRepository>();
@@ -161,7 +157,7 @@ builder.Services.AddHttpClient<IAiChatService, GeminiChatService>(client =>
 }).AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IAiVisionService, GeminiVisionService>(client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(60); // Vision analysis can take longer
+    client.Timeout = TimeSpan.FromSeconds(60);
 }).AddStandardResilienceHandler();
 builder.Services.AddScoped<IGeminiVoiceService, SpeakHalo.Infrastructure.Services.Voice.GeminiLiveVoiceService>();
 
@@ -184,13 +180,11 @@ builder.Services.AddScoped<ISentimentAnalysisService, SpeakHalo.Application.Serv
 builder.Services.AddScoped<IEncryptionService, EncryptionService>();
 builder.Services.AddScoped<IFileUploadService, FileUploadService>();
 builder.Services.AddScoped<CookieManagementService>();
-builder.Services.AddHttpContextAccessor(); // Required for CookieManagementService
+builder.Services.AddHttpContextAccessor();
 
-// Configure PhoneNumberSettings
 builder.Services.Configure<SpeakHalo.API.Controllers.PhoneNumberSettings>(
     builder.Configuration.GetSection("PhoneNumbers"));
 
-// Redis Configuration (optional - falls back to in-memory cache if not configured)
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 if (!string.IsNullOrEmpty(redisConnectionString))
 {
@@ -210,7 +204,6 @@ builder.Services.AddScoped<SpeakHalo.Application.BackgroundJobs.DataCleanupJob>(
 builder.Services.AddScoped<SpeakHalo.Application.BackgroundJobs.MediaProcessingJob>();
 builder.Services.AddScoped<SpeakHalo.Application.BackgroundJobs.TrialEnforcementJob>();
 
-// Register background services
 builder.Services.AddHostedService<FollowUpProcessingBackgroundService>();
 
 builder.Services.AddSingleton(sp =>
@@ -299,7 +292,7 @@ builder.Services.AddResponseCompression(options =>
 });
 builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(options =>
 {
-    options.Level = System.IO.Compression.CompressionLevel.Fastest; // Best for real-time APIs
+    options.Level = System.IO.Compression.CompressionLevel.Fastest;
 });
 builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(options =>
 {
@@ -310,7 +303,6 @@ builder.Services.AddOutputCache(options =>
 {
     options.AddBasePolicy(builder => builder.Expire(TimeSpan.FromMinutes(5)));
 
-    // Cache GET requests for specific endpoints
     options.AddPolicy("Dashboard", builder => builder
         .Expire(TimeSpan.FromMinutes(2))
         .SetVaryByQuery("*"));
@@ -323,7 +315,6 @@ builder.Services.AddOutputCache(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    // SwaggerDoc entries are added post-build via ConfigureSwaggerOptions to avoid BuildServiceProvider() anti-pattern
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token",
@@ -350,7 +341,6 @@ builder.Services.AddSwaggerGen(c =>
 });
 builder.Services.ConfigureOptions<ConfigureSwaggerOptions>();
 
-// CORS Configuration
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? throw new InvalidOperationException("Cors:AllowedOrigins must be configured in appsettings");
 
@@ -358,7 +348,6 @@ builder.Services.AddCors(options =>
 {
     if (builder.Environment.IsDevelopment())
     {
-        // Development: Allow all origins
         options.AddDefaultPolicy(policy =>
         {
             policy.AllowAnyOrigin()
@@ -368,7 +357,6 @@ builder.Services.AddCors(options =>
     }
     else
     {
-        // Production: Restrict to configured origins
         options.AddDefaultPolicy(policy =>
         {
             policy.WithOrigins(allowedOrigins)
@@ -378,7 +366,6 @@ builder.Services.AddCors(options =>
                   .WithExposedHeaders("Content-Disposition", "X-Total-Count");
         });
 
-        // Also add a specific policy for webhooks (no credentials needed)
         options.AddPolicy("WebhookPolicy", policy =>
         {
             policy.WithOrigins(allowedOrigins)
@@ -388,17 +375,11 @@ builder.Services.AddCors(options =>
     }
 });
 
-// Comprehensive health checks
 builder.Services.AddHealthChecks()
-    // Database connectivity
     .AddDbContextCheck<ApplicationDbContext>("database", tags: new[] { "ready", "db" })
-
-    // External services
     .AddCheck<SpeakHalo.API.HealthChecks.GeminiHealthCheck>("gemini", tags: new[] { "ready", "external" })
     .AddCheck<SpeakHalo.API.HealthChecks.TwilioHealthCheck>("twilio", tags: new[] { "ready", "external" })
     .AddCheck<SpeakHalo.API.HealthChecks.RedisHealthCheck>("redis", tags: new[] { "ready", "cache" })
-
-    // System resources
     .AddCheck<SpeakHalo.API.HealthChecks.DiskSpaceHealthCheck>("disk_space", tags: new[] { "ready", "resources" })
     .AddCheck<SpeakHalo.API.HealthChecks.MemoryHealthCheck>("memory", tags: new[] { "ready", "resources" });
 
@@ -457,19 +438,16 @@ app.UseAuthorization();
 
 app.UseOutputCache();
 
-// Cookie Consent Validation Middleware (GDPR/CCPA compliance)
 app.UseCookieConsentValidation(options =>
 {
-    options.Enabled = true; // Enable consent checking
-    options.AddConsentHeaders = app.Environment.IsDevelopment(); // Add headers in dev only
-    options.UseDefaultRules = true; // Use built-in path rules
+    options.Enabled = true;
+    options.AddConsentHeaders = app.Environment.IsDevelopment();
+    options.UseDefaultRules = true;
 
-    // Add custom path consent rules
     options.PathConsentRules["/api/v1/analytics"] = CookieCategory.Analytics;
     options.PathConsentRules["/api/v1/marketing"] = CookieCategory.Marketing;
     options.PathConsentRules["/api/v1/social"] = CookieCategory.SocialMedia;
 
-    // Enforcement mode (Block, LogOnly, or Warn)
     options.EnforcementMode = app.Environment.IsProduction()
         ? ConsentEnforcementMode.Block
         : ConsentEnforcementMode.LogOnly;
@@ -479,14 +457,13 @@ app.UseHangfireDashboard("/hangfire", new DashboardOptions
 {
     Authorization = new[] { new HangfireAuthorizationFilter() },
     DashboardTitle = "SpeakHalo Background Jobs",
-    StatsPollingInterval = 5000 // Poll every 5 seconds
+    StatsPollingInterval = 5000
 });
 
 app.UseWebSockets();
 
 app.MapControllers();
 
-// WebSocket endpoint for Twilio Media Streams voice agent
 // Secured with a one-time stream token generated by TwilioVoiceWebhookController
 app.Map("/api/v1/voice-stream/{agentId}", async (HttpContext context, string agentId) =>
 {
@@ -494,7 +471,6 @@ app.Map("/api/v1/voice-stream/{agentId}", async (HttpContext context, string age
     {
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("VoiceStream");
 
-        // Validate stream token against Call record (compare SHA256 hash)
         var streamToken = context.Request.Query["token"].FirstOrDefault();
         if (string.IsNullOrEmpty(streamToken))
         {
@@ -542,11 +518,9 @@ app.Map("/api/v1/voice-stream/{agentId}", async (HttpContext context, string age
 
 app.MapHub<SpeakHalo.API.Hubs.NotificationHub>("/hubs/notifications");
 
-// Health check endpoints
-// Liveness probe - basic check to see if the app is running
 app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
-    Predicate = _ => false, // No checks, just returns 200 OK if app is running
+    Predicate = _ => false,
     ResponseWriter = async (context, report) =>
     {
         context.Response.ContentType = "application/json";
@@ -558,7 +532,6 @@ app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthC
     }
 });
 
-// Readiness probe - checks if app is ready to serve traffic
 app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
@@ -583,7 +556,6 @@ app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.Health
     }
 });
 
-// Detailed health check - all checks with detailed information
 // Exception details only shown in development to prevent infrastructure info leaks
 app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
@@ -637,7 +609,7 @@ RecurringJob.AddOrUpdate<SpeakHalo.Application.BackgroundJobs.DataCleanupJob>(
 RecurringJob.AddOrUpdate<SpeakHalo.Application.BackgroundJobs.MediaProcessingJob>(
     "process-pending-media",
     job => job.ProcessPendingDownloadsAsync(CancellationToken.None),
-    "*/5 * * * *"); // Every 5 minutes
+    "*/5 * * * *");
 
 RecurringJob.AddOrUpdate<SpeakHalo.Application.BackgroundJobs.MediaProcessingJob>(
     "cleanup-old-media",
@@ -654,7 +626,6 @@ RecurringJob.AddOrUpdate<SpeakHalo.Application.BackgroundJobs.TrialEnforcementJo
     job => job.SendTrialWarningsAsync(CancellationToken.None),
     Cron.Daily);
 
-// Seed initial data
 if (app.Environment.IsDevelopment() || args.Contains("--seed"))
 {
     using (var scope = app.Services.CreateScope())
@@ -712,5 +683,4 @@ finally
     Log.CloseAndFlush();
 }
 
-// Make Program class accessible to tests
 public partial class Program { }

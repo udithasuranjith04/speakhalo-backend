@@ -1,12 +1,12 @@
 #!/bin/bash
 # Create SpeakHalo Database - Execute SQL Script
 
-# Database connection details
-DB_HOST="your-db-host.example.com"
-DB_PORT="25060"
-DB_NAME="speakhalo"
-DB_USER="doadmin"
-DB_PASSWORD="YOUR_DB_PASSWORD"
+# Database connection details (set via environment variables)
+DB_HOST="${DATABASE_HOST:?DATABASE_HOST environment variable is required}"
+DB_PORT="${DATABASE_PORT:-5432}"
+DB_NAME="${DATABASE_NAME:-speakhalo}"
+DB_USER="${DATABASE_USER:?DATABASE_USER environment variable is required}"
+DB_PASSWORD="${DATABASE_PASSWORD:?DATABASE_PASSWORD environment variable is required}"
 
 echo "Creating SpeakHalo database tables..."
 echo "Host: $DB_HOST"
@@ -20,12 +20,12 @@ if command -v psql &> /dev/null; then
 
     if [ $? -eq 0 ]; then
         echo ""
-        echo "✅ Database created successfully!"
+        echo "Database created successfully!"
         echo ""
         echo "Verifying tables..."
         PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "\dt"
     else
-        echo "❌ Database creation failed!"
+        echo "Database creation failed!"
         exit 1
     fi
 else
@@ -38,13 +38,14 @@ else
 
     if [ $? -eq 0 ]; then
         echo ""
-        echo "✅ Database created successfully using EF Core!"
+        echo "Database created successfully using EF Core!"
     else
-        echo "❌ Database creation failed!"
+        echo "Database creation failed!"
         echo ""
         echo "Manual instructions:"
         echo "1. Install PostgreSQL client: brew install postgresql"
-        echo "2. Run: PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f InitialMigration.sql"
+        echo "2. Set environment variables: DATABASE_HOST, DATABASE_USER, DATABASE_PASSWORD"
+        echo "3. Run: PGPASSWORD=\$DATABASE_PASSWORD psql -h \$DATABASE_HOST -p \$DATABASE_PORT -U \$DATABASE_USER -d \$DATABASE_NAME -f InitialMigration.sql"
         exit 1
     fi
 fi

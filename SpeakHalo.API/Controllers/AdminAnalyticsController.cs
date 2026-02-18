@@ -6,9 +6,6 @@ using SpeakHalo.Infrastructure.Data;
 
 namespace SpeakHalo.API.Controllers;
 
-/// <summary>
-/// Admin analytics dashboard for usage and revenue insights
-/// </summary>
 [ApiController]
 [Route("api/v1/admin/analytics")]
 [Authorize(Roles = "Admin")]
@@ -28,9 +25,6 @@ public class AdminAnalyticsController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Get comprehensive dashboard overview
-    /// </summary>
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboardOverview([FromQuery] DateTime? startDate = null, [FromQuery] DateTime? endDate = null)
     {
@@ -40,10 +34,8 @@ public class AdminAnalyticsController : ControllerBase
             var start = startDate ?? now.AddDays(-30);
             var end = endDate ?? now;
 
-            // Total active users
             var totalUsers = await _context.Users.CountAsync(u => u.IsActive && !u.IsDeleted);
 
-            // Active subscriptions by plan
             var subscriptionsByPlan = await _context.UserSubscriptions
                 .Where(s => !string.IsNullOrEmpty(s.Plan))
                 .GroupBy(s => s.Plan)
@@ -54,18 +46,15 @@ public class AdminAnalyticsController : ControllerBase
                 })
                 .ToListAsync();
 
-            // Trial statistics
             var activeTrials = await _context.UserTrials
                 .CountAsync(t => t.IsTrial && t.TrialEndsAt > now);
 
             var expiredTrials = await _context.UserTrials
                 .CountAsync(t => t.IsTrial && t.TrialEndsAt <= now);
 
-            // Suspended accounts
             var suspendedCount = await _context.UserSubscriptions
                 .CountAsync(s => s.IsTemporarilySuspended);
 
-            // Usage statistics (current month)
             var usageStats = await _context.UserSubscriptions
                 .Select(s => new
                 {
@@ -127,7 +116,6 @@ public class AdminAnalyticsController : ControllerBase
             var start = startDate ?? now.AddDays(-30);
             var end = endDate ?? now;
 
-            // Get all subscriptions with usage
             var subscriptions = await _context.UserSubscriptions
                 .Include(s => s.User)
                 .Where(s => s.User.IsActive)
@@ -147,7 +135,6 @@ public class AdminAnalyticsController : ControllerBase
                 })
                 .ToListAsync();
 
-            // Calculate usage percentages and overage
             var usageBreakdown = subscriptions.Select(s => new
             {
                 s.UserId,
@@ -183,11 +170,9 @@ public class AdminAnalyticsController : ControllerBase
                 }
             }).ToList();
 
-            // Top users by usage
             var topAIUsers = usageBreakdown.OrderByDescending(u => u.aiUsage.used).Take(10);
             var topWhatsAppUsers = usageBreakdown.OrderByDescending(u => u.whatsAppUsage.used).Take(10);
 
-            // Aggregate statistics
             var totalUsage = new
             {
                 aiMinutes = usageBreakdown.Sum(u => u.aiUsage.used),
@@ -227,7 +212,6 @@ public class AdminAnalyticsController : ControllerBase
             var start = startDate ?? now.AddDays(-30);
             var end = endDate ?? now;
 
-            // Active users by plan
             var usersByPlan = await _context.UserSubscriptions
                 .Where(s => !string.IsNullOrEmpty(s.Plan) && s.Plan != "trial")
                 .GroupBy(s => s.Plan)
@@ -265,7 +249,6 @@ public class AdminAnalyticsController : ControllerBase
             var now = DateTime.UtcNow;
             var startDate = now.AddDays(-days);
 
-            // New users per day
             var newUsersByDay = await _context.Users
                 .Where(u => u.CreatedAt >= startDate)
                 .GroupBy(u => u.CreatedAt.Date)
@@ -277,7 +260,6 @@ public class AdminAnalyticsController : ControllerBase
                 .OrderBy(d => d.date)
                 .ToListAsync();
 
-            // Trial activations per day
             var trialsByDay = await _context.UserTrials
                 .Where(t => t.TrialStartedAt.HasValue && t.TrialStartedAt.Value >= startDate)
                 .GroupBy(t => t.TrialStartedAt!.Value.Date)
@@ -289,7 +271,6 @@ public class AdminAnalyticsController : ControllerBase
                 .OrderBy(d => d.date)
                 .ToListAsync();
 
-            // Trial conversions (users who went from trial to paid)
             var trialConversions = await _context.UserTrials
                 .Where(t => t.IsTrial == false && t.TrialStartedAt.HasValue && t.TrialStartedAt.Value >= startDate)
                 .CountAsync();
@@ -300,7 +281,6 @@ public class AdminAnalyticsController : ControllerBase
 
             var conversionRate = totalTrials > 0 ? (trialConversions * 100.0 / totalTrials) : 0;
 
-            // Churn (users who became inactive or deleted)
             var churnedUsers = await _context.Users
                 .Where(u => !u.IsActive || u.IsDeleted)
                 .Where(u => u.UpdatedAt.HasValue && u.UpdatedAt.Value >= startDate)

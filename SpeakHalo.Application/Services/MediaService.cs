@@ -13,10 +13,6 @@ using SixLabors.ImageSharp.Formats.Jpeg;
 
 namespace SpeakHalo.Application.Services;
 
-/// <summary>
-/// Media handling service implementation
-/// Downloads, stores, and processes WhatsApp media files
-/// </summary>
 public class MediaService : IMediaService
 {
     private readonly IMediaFileRepository _mediaRepository;
@@ -61,10 +57,8 @@ public class MediaService : IMediaService
                 return Result<MediaDownloadResult>.Failure("Media URL is not from an allowed source");
             }
 
-            // Download media from Twilio
             var httpClient = _httpClientFactory.CreateClient();
 
-            // Add Twilio auth if available
             var twilioAccountSid = _configuration["Twilio:AccountSid"];
             var twilioAuthToken = _configuration["Twilio:AuthToken"];
 
@@ -86,21 +80,17 @@ public class MediaService : IMediaService
             var fileData = await response.Content.ReadAsByteArrayAsync(cancellationToken);
             var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
 
-            // Check file size
             if (fileData.Length > MAX_FILE_SIZE)
             {
                 return Result<MediaDownloadResult>.Failure($"File too large: {fileData.Length} bytes (max: {MAX_FILE_SIZE})");
             }
 
-            // Determine media type
             var mediaType = DetermineMediaType(contentType);
             var fileExtension = GetFileExtension(contentType);
 
-            // Generate unique filename
             var fileName = $"{Guid.NewGuid()}{fileExtension}";
             var folder = $"media/{request.UserId}/{DateTime.UtcNow:yyyy/MM}";
 
-            // Save to storage
             var storedPath = await _fileStorage.SaveFileAsync(
                 fileName,
                 fileData,
@@ -109,7 +99,6 @@ public class MediaService : IMediaService
                 cancellationToken
             );
 
-            // Create media file record
             var mediaFile = new MediaFile
             {
                 OriginalUrl = request.MediaUrl,
@@ -131,7 +120,6 @@ public class MediaService : IMediaService
             string? visionAnalysis = null;
             double? analysisConfidence = null;
 
-            // Generate thumbnail for images
             if (mediaType == MediaType.Image && request.GenerateThumbnail)
             {
                 thumbnailPath = await GenerateThumbnailAsync(
@@ -143,7 +131,6 @@ public class MediaService : IMediaService
                 mediaFile.ThumbnailPath = thumbnailPath;
             }
 
-            // Extract image dimensions
             if (mediaType == MediaType.Image)
             {
                 var (width, height) = await GetImageDimensionsAsync(fileData);
@@ -151,7 +138,6 @@ public class MediaService : IMediaService
                 mediaFile.Height = height;
             }
 
-            // AI vision analysis for images
             if (mediaType == MediaType.Image && request.ProcessWithAI)
             {
                 var visionRequest = new VisionAnalysisRequest
@@ -212,7 +198,6 @@ public class MediaService : IMediaService
     {
         try
         {
-            // Check file size
             if (request.FileData.Length > MAX_FILE_SIZE)
             {
                 return Result<MediaUploadResult>.Failure($"File too large: {request.FileData.Length} bytes");
@@ -647,8 +632,6 @@ public class MediaService : IMediaService
             return Result<int>.Failure($"Cleanup failed: {ex.Message}");
         }
     }
-
-    // Helper methods
 
     private MediaType DetermineMediaType(string contentType)
     {

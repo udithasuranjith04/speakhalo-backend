@@ -86,12 +86,10 @@ public class CacheService : ICacheService
     {
         try
         {
-            // Try to get from cache
             var cached = await GetAsync<T>(key, cancellationToken);
             if (cached != null)
                 return cached;
 
-            // Cache miss - execute factory
             var value = await factory();
             if (value != null)
             {

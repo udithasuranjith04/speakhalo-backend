@@ -610,7 +610,6 @@ public class UsageTrackingService : IUsageTrackingService
             return; // Below warning threshold
 
         // Check if we've already sent this specific warning this billing period
-        var cacheKey = $"usage_warning:{userId}:{usageType}:{threshold}";
         var existingWarning = await _context.Set<Domain.Entities.Notification>()
             .AsNoTracking()
             .AnyAsync(n => n.UserId == userId

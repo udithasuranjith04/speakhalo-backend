@@ -65,7 +65,6 @@ public class SystemStatusService : ISystemStatusService
         {
             var stopwatch = Stopwatch.StartNew();
 
-            // Try to query database
             var userCount = await _unitOfWork.Repository<User>().CountAsync(u => true, cancellationToken);
 
             stopwatch.Stop();

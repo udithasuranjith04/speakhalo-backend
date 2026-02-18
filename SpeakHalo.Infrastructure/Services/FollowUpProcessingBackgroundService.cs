@@ -5,14 +5,11 @@ using SpeakHalo.Application.Interfaces;
 
 namespace SpeakHalo.Infrastructure.Services;
 
-/// <summary>
-/// Background service that processes pending follow-up messages every 2 minutes
-/// </summary>
 public class FollowUpProcessingBackgroundService : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<FollowUpProcessingBackgroundService> _logger;
-    private readonly TimeSpan _interval = TimeSpan.FromMinutes(2); // Check every 2 minutes
+    private readonly TimeSpan _interval = TimeSpan.FromMinutes(2);
 
     public FollowUpProcessingBackgroundService(
         IServiceProvider serviceProvider,

@@ -18,10 +18,9 @@ public class LanguageDetectionService : ILanguageDetectionService
     public async Task<string> DetectLanguageAsync(string text, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(text))
-            return "en"; // Default to English
+            return "en";
 
-        // Simple language detection based on character patterns
-        // In production, use a library like NTextCat or call Azure Cognitive Services
+        // In production, replace with NTextCat or Azure Cognitive Services
         var result = await Task.Run(() => DetectLanguageByPattern(text), cancellationToken);
         return result;
     }
@@ -55,50 +54,36 @@ public class LanguageDetectionService : ILanguageDetectionService
 
     private string DetectLanguageByPattern(string text)
     {
-        // Simple pattern-based detection
-        // In production, use a proper language detection library
-
-        // Check for Chinese characters
         if (Regex.IsMatch(text, @"[\u4e00-\u9fff]"))
             return "zh";
 
-        // Check for Japanese characters
         if (Regex.IsMatch(text, @"[\u3040-\u309f\u30a0-\u30ff]"))
             return "ja";
 
-        // Check for Korean characters
         if (Regex.IsMatch(text, @"[\uac00-\ud7af]"))
             return "ko";
 
-        // Check for Arabic characters
         if (Regex.IsMatch(text, @"[\u0600-\u06ff]"))
             return "ar";
 
-        // Check for Hebrew characters
         if (Regex.IsMatch(text, @"[\u0590-\u05ff]"))
             return "he";
 
-        // Check for Cyrillic characters (Russian)
         if (Regex.IsMatch(text, @"[\u0400-\u04ff]"))
             return "ru";
 
-        // Check for common Spanish words
         if (ContainsCommonWords(text, new[] { "el", "la", "de", "que", "en", "es", "por", "un", "con", "año" }))
             return "es";
 
-        // Check for common French words
         if (ContainsCommonWords(text, new[] { "le", "de", "un", "être", "et", "à", "il", "avoir", "ne", "je" }))
             return "fr";
 
-        // Check for common German words
         if (ContainsCommonWords(text, new[] { "der", "die", "und", "in", "den", "von", "zu", "das", "mit", "sich" }))
             return "de";
 
-        // Check for common Portuguese words
         if (ContainsCommonWords(text, new[] { "o", "a", "de", "que", "e", "do", "da", "em", "um", "para" }))
             return "pt";
 
-        // Default to English
         return "en";
     }
 
@@ -108,7 +93,7 @@ public class LanguageDetectionService : ILanguageDetectionService
         var words = lowerText.Split(new[] { ' ', ',', '.', '!', '?' }, StringSplitOptions.RemoveEmptyEntries);
         var matchCount = words.Count(w => commonWords.Contains(w));
 
-        return matchCount >= 2; // At least 2 common words found
+        return matchCount >= 2;
     }
 
     private List<SupportedLanguage> InitializeSupportedLanguages()

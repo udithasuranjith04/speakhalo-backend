@@ -11,9 +11,6 @@ using System.Security.Claims;
 
 namespace SpeakHalo.API.Controllers;
 
-/// <summary>
-/// Cookie consent management and GDPR/CCPA compliance
-/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/cookies")]
@@ -43,10 +40,6 @@ public class CookieConsentController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Get consent banner data with cookie definitions and user's current consents
-    /// </summary>
-    /// <param name="lang">Language code (default: en)</param>
     [HttpGet("banner")]
     [AllowAnonymous]
     public async Task<IActionResult> GetConsentBanner(
@@ -69,9 +62,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Get all active cookie definitions grouped by category
-    /// </summary>
     [HttpGet("definitions")]
     [AllowAnonymous]
     public async Task<IActionResult> GetCookieDefinitions(CancellationToken cancellationToken = default)
@@ -107,9 +97,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Get user's current cookie consent choices
-    /// </summary>
     [HttpGet("consent")]
     [AllowAnonymous]
     public async Task<IActionResult> GetUserConsents(CancellationToken cancellationToken = default)
@@ -144,10 +131,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Save user's cookie consent choices
-    /// </summary>
-    /// <param name="request">Consent choices for each category</param>
     [HttpPost("consent")]
     [AllowAnonymous]
     public async Task<IActionResult> SaveConsent(
@@ -191,10 +174,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Check if user has consented to a specific cookie category
-    /// </summary>
-    /// <param name="category">Cookie category to check</param>
     [HttpGet("consent/{category}")]
     [AllowAnonymous]
     public async Task<IActionResult> CheckConsent(
@@ -223,10 +202,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Withdraw all cookie consents (except essential)
-    /// </summary>
-    /// <param name="request">Optional reason for withdrawal</param>
     [HttpDelete("consent")]
     [AllowAnonymous]
     public async Task<IActionResult> WithdrawConsent(
@@ -258,10 +233,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Get the active cookie policy
-    /// </summary>
-    /// <param name="lang">Language code (default: en)</param>
     [HttpGet("policy")]
     [AllowAnonymous]
     public async Task<IActionResult> GetActivePolicy(
@@ -298,10 +269,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Get cookie policy by version
-    /// </summary>
-    /// <param name="policyVersion">Policy version</param>
     [HttpGet("policy/{policyVersion}")]
     [AllowAnonymous]
     public async Task<IActionResult> GetPolicyByVersion(
@@ -338,10 +305,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Get all policy versions (history)
-    /// </summary>
-    /// <param name="lang">Language code (default: en)</param>
     [HttpGet("policy/history")]
     [AllowAnonymous]
     public async Task<IActionResult> GetPolicyHistory(
@@ -373,11 +336,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    // ========== ADMIN ENDPOINTS ==========
-
-    /// <summary>
-    /// [ADMIN] Create a new cookie definition
-    /// </summary>
     [HttpPost("admin/definitions")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> CreateCookieDefinition(
@@ -417,9 +375,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// [ADMIN] Create a new cookie policy
-    /// </summary>
     [HttpPost("admin/policies")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> CreateCookiePolicy(
@@ -455,9 +410,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// [ADMIN] Activate a cookie policy version
-    /// </summary>
     [HttpPut("admin/policies/{policyId}/activate")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> ActivatePolicy(
@@ -476,9 +428,6 @@ public class CookieConsentController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// [ADMIN] Get consent statistics
-    /// </summary>
     [HttpGet("admin/statistics")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetConsentStatistics(CancellationToken cancellationToken = default)

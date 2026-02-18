@@ -37,7 +37,6 @@ public class Appointment : BaseEntity
     public string? CancellationReason { get; set; }
     public bool ReminderSent { get; set; } = false;
 
-    // Concurrency token
     public uint RowVersion { get; set; }
 
     public virtual User User { get; set; } = null!;

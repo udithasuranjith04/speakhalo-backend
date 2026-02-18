@@ -13,30 +13,25 @@ public class SecurityHeadersMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        // Generate a unique nonce for this request
         var nonce = GenerateNonce();
         context.Items["csp-nonce"] = nonce;
 
-        // Security headers
         context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
         context.Response.Headers.Append("X-Frame-Options", "DENY");
         context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
         context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
 
-        // Path-aware Content Security Policy
         var path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
         var csp = BuildContentSecurityPolicy(path, nonce);
 
         context.Response.Headers.Append("Content-Security-Policy", csp);
 
-        // Additional security headers
         context.Response.Headers.Append("Permissions-Policy",
             "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=()");
         context.Response.Headers.Append("Strict-Transport-Security",
             "max-age=31536000; includeSubDomains; preload");
         context.Response.Headers.Append("X-Permitted-Cross-Domain-Policies", "none");
 
-        // Remove server identification headers
         context.Response.Headers.Remove("Server");
         context.Response.Headers.Remove("X-Powered-By");
         context.Response.Headers.Remove("X-AspNet-Version");
@@ -49,7 +44,6 @@ public class SecurityHeadersMiddleware
 
     private static void SetCacheControlHeaders(HttpContext context, string path)
     {
-        // WebSocket, webhook, and auth endpoints — never cache
         if (path.StartsWith("/api/v1/voice-stream") ||
             path.StartsWith("/api/v1/webhooks") ||
             path.StartsWith("/api/v1/whatsapp/webhook") ||
@@ -61,7 +55,7 @@ public class SecurityHeadersMiddleware
             return;
         }
 
-        // Health check endpoints — short edge cache (Cloudflare caches, reduces origin load)
+        // Short edge cache so Cloudflare absorbs health-check traffic instead of hitting the origin
         if (path.StartsWith("/health"))
         {
             context.Response.Headers.Append("Cache-Control", "public, max-age=10, s-maxage=10");
@@ -69,7 +63,6 @@ public class SecurityHeadersMiddleware
             return;
         }
 
-        // All other API endpoints — private (browser can cache, Cloudflare respects per-user)
         context.Response.Headers.Append("Cache-Control", "private, no-cache");
     }
 
@@ -90,7 +83,6 @@ public class SecurityHeadersMiddleware
                    "form-action 'self'";
         }
 
-        // Strict CSP for all other endpoints - no 'unsafe-inline'
         return $"default-src 'self'; " +
                $"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; " +
                $"style-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; " +

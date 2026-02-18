@@ -25,9 +25,6 @@ public class SMSWebhookController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Handle incoming SMS from Twilio
-    /// </summary>
     [HttpPost]
     public async Task<IActionResult> HandleIncomingSMS([FromForm] TwilioSmsWebhook webhook, CancellationToken cancellationToken)
     {
@@ -50,9 +47,6 @@ public class SMSWebhookController : ControllerBase
         return Ok();
     }
 
-    /// <summary>
-    /// Handle SMS delivery status callbacks from Twilio
-    /// </summary>
     [HttpPost("status")]
     public async Task<IActionResult> HandleStatusCallback([FromForm] TwilioSmsStatusWebhook webhook, CancellationToken cancellationToken)
     {

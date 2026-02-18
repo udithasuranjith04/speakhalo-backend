@@ -6,7 +6,7 @@ public class Quote : BaseEntity
     public string CustomerId { get; set; } = string.Empty;
     public string QuoteNumber { get; set; } = string.Empty;
     public string Status { get; set; } = "draft";
-    public string Tier { get; set; } = "Better"; // Good, Better, Best
+    public string Tier { get; set; } = "Better";
     public decimal Subtotal { get; set; } = 0;
     public decimal Tax { get; set; } = 0;
     public decimal Total { get; set; } = 0;

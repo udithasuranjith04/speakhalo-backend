@@ -77,9 +77,6 @@ public class GeminiVoiceWebhookController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Check appointment availability for a given date/time range
-    /// </summary>
     [HttpPost("tools/check-availability")]
     public async Task<IActionResult> CheckAvailability(
         [FromBody] CheckAvailabilityRequest request,
@@ -121,9 +118,6 @@ public class GeminiVoiceWebhookController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Book an appointment from a voice call
-    /// </summary>
     [HttpPost("tools/book-appointment")]
     public async Task<IActionResult> BookAppointment(
         [FromBody] BookAppointmentRequest request,
@@ -137,7 +131,6 @@ public class GeminiVoiceWebhookController : ControllerBase
             if (string.IsNullOrEmpty(request.UserId))
                 return Ok(new { success = false, message = "Booking requires a user ID." });
 
-            // Look up or create customer
             string? customerId = null;
             if (!string.IsNullOrEmpty(request.CustomerPhone))
             {
@@ -185,9 +178,6 @@ public class GeminiVoiceWebhookController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Get business information for the caller
-    /// </summary>
     [HttpPost("tools/business-info")]
     public async Task<IActionResult> GetBusinessInfo(
         [FromBody] BusinessInfoRequest request,
@@ -230,9 +220,6 @@ public class GeminiVoiceWebhookController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Transfer the call to a human agent
-    /// </summary>
     [HttpPost("tools/transfer-call")]
     public IActionResult TransferCall(
         [FromBody] TransferCallRequest request)
@@ -248,9 +235,6 @@ public class GeminiVoiceWebhookController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Post-call processing: save transcript, duration, cost
-    /// </summary>
     [HttpPost("post-call")]
     public async Task<IActionResult> PostCallProcessing(
         [FromBody] PostCallRequest request,

@@ -102,7 +102,6 @@ public class CookieAuditLog : BaseEntity
     /// </summary>
     public int? DurationMs { get; set; }
 
-    // Navigation properties
     public virtual User? User { get; set; }
     public virtual UserCookieConsent? Consent { get; set; }
     public virtual CookieDefinition? CookieDefinition { get; set; }

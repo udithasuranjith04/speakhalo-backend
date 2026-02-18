@@ -1,6 +1,6 @@
 using System.Linq.Expressions;
 using SpeakHalo.Domain.Entities;
-using SpeakHalo.Domain.Models;
+using SpeakHalo.Shared.Models;
 
 namespace SpeakHalo.Domain.Interfaces.Repositories;
 
@@ -20,8 +20,8 @@ public interface IRepository<T> where T : BaseEntity
     Task AddRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default);
     void Update(T entity);
     void UpdateRange(IEnumerable<T> entities);
-    void Remove(T entity); // Soft delete
-    void RemoveRange(IEnumerable<T> entities); // Soft delete
-    void HardDelete(T entity); // Permanent delete
-    void HardDeleteRange(IEnumerable<T> entities); // Permanent delete
+    void Remove(T entity);
+    void RemoveRange(IEnumerable<T> entities);
+    void HardDelete(T entity);
+    void HardDeleteRange(IEnumerable<T> entities);
 }

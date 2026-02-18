@@ -32,23 +32,19 @@ public class AdminDashboardController : ControllerBase
             var now = DateTime.UtcNow;
             var monthStart = new DateTime(now.Year, now.Month, 1);
 
-            // Revenue metrics (all-time) - use database aggregations
             var invoiceRepo = _unitOfWork.Repository<Invoice>();
             var totalRevenue = await invoiceRepo.SumAsync(i => (decimal?)i.Total, cancellationToken) ?? 0;
             var paidRevenue = await invoiceRepo.SumAsync(i => i.Status == "paid" ? (decimal?)i.Total : null, cancellationToken) ?? 0;
             var invoiceCount = await invoiceRepo.CountAsync(null, cancellationToken);
 
-            // Current month revenue - database aggregations
             var monthRevenue = await invoiceRepo.SumAsync(i => i.CreatedAt >= monthStart ? (decimal?)i.Total : null, cancellationToken) ?? 0;
             var monthPaid = await invoiceRepo.SumAsync(i => i.CreatedAt >= monthStart && i.Status == "paid" ? (decimal?)i.Total : null, cancellationToken) ?? 0;
 
-            // Customer metrics - database aggregations
             var totalCustomers = await _unitOfWork.Users.CountAsync(null, cancellationToken);
             var activeCustomers = await _unitOfWork.Users.CountAsync(u => u.IsActive, cancellationToken);
             var trialCustomers = await _unitOfWork.Repository<Domain.Entities.UserTrial>()
                 .CountAsync(t => t.IsTrial, cancellationToken);
 
-            // Churn rate: users who cancelled in the last 30 days / total active at start of period
             var lastMonth = now.AddDays(-30);
             var cancelledLastMonth = await _unitOfWork.Repository<Domain.Entities.UserSubscription>()
                 .CountAsync(s => s.Plan == null && s.UpdatedAt >= lastMonth && !s.HasActivePayment, cancellationToken);
@@ -56,7 +52,6 @@ public class AdminDashboardController : ControllerBase
                 ? Math.Round((double)cancelledLastMonth / activeCustomers * 100, 1)
                 : 0.0;
 
-            // Call metrics - database aggregations
             var totalCalls = await _unitOfWork.Calls.CountAsync(null, cancellationToken);
             var totalSeconds = await _unitOfWork.Calls.SumAsync(c => (long?)c.DurationSeconds, cancellationToken) ?? 0;
             var totalMinutes = totalSeconds / 60;
@@ -65,7 +60,6 @@ public class AdminDashboardController : ControllerBase
             var monthSeconds = await _unitOfWork.Calls.SumAsync(c => c.CreatedAt >= monthStart ? (long?)c.DurationSeconds : null, cancellationToken) ?? 0;
             var monthMinutes = monthSeconds / 60;
 
-            // Appointment metrics
             var monthAppointments = await _unitOfWork.Appointments
                 .CountAsync(a => a.CreatedAt >= monthStart, cancellationToken);
 
@@ -129,7 +123,6 @@ public class AdminDashboardController : ControllerBase
         {
             var cutoffDate = DateTime.UtcNow.AddMonths(-months);
 
-            // Use database-level GroupBy for aggregations
             var trends = await _unitOfWork.Repository<Invoice>()
                 .FindAsync(i => i.CreatedAt >= cutoffDate, cancellationToken);
 
@@ -163,7 +156,6 @@ public class AdminDashboardController : ControllerBase
             var now = DateTime.UtcNow;
             var monthStart = new DateTime(now.Year, now.Month, 1);
 
-            // Use database aggregations instead of loading all users
             var totalCustomers = await _unitOfWork.Users.CountAsync(null, cancellationToken);
             var activeCustomers = await _unitOfWork.Users.CountAsync(u => u.IsActive, cancellationToken);
             var inactiveCustomers = await _unitOfWork.Users.CountAsync(u => !u.IsActive, cancellationToken);
@@ -172,7 +164,6 @@ public class AdminDashboardController : ControllerBase
             var payingCustomers = activeCustomers - trialCustomers;
             var newThisMonth = await _unitOfWork.Users.CountAsync(u => u.CreatedAt >= monthStart, cancellationToken);
 
-            // For subscription distribution, use UserSubscription (source of truth)
             var allSubscriptions = await _unitOfWork.Repository<Domain.Entities.UserSubscription>()
                 .GetAllAsync(cancellationToken);
             var subscriptionDistribution = allSubscriptions
@@ -210,7 +201,6 @@ public class AdminDashboardController : ControllerBase
         {
             var cutoffDate = DateTime.UtcNow.AddDays(-days);
 
-            // Use database aggregations for call metrics
             var totalCalls = await _unitOfWork.Calls.CountAsync(c => c.CreatedAt >= cutoffDate, cancellationToken);
             var totalDurationSeconds = await _unitOfWork.Calls.SumAsync(
                 c => c.CreatedAt >= cutoffDate ? (long?)c.DurationSeconds : null,
@@ -219,10 +209,8 @@ public class AdminDashboardController : ControllerBase
                 ? await _unitOfWork.Calls.AverageAsync(c => c.CreatedAt >= cutoffDate ? (int?)c.DurationSeconds : null, cancellationToken) ?? 0
                 : 0;
 
-            // Appointments - need to load for status grouping
             var appointments = await _unitOfWork.Appointments.FindAsync(a => a.CreatedAt >= cutoffDate, cancellationToken);
 
-            // Use database aggregations for cost metrics
             var usageCostsRepo = _unitOfWork.Repository<UsageCosts>();
             var totalAi = await usageCostsRepo.SumAsync(
                 u => u.CreatedAt >= cutoffDate ? (decimal?)u.AiCosts : null,
@@ -286,7 +274,6 @@ public class AdminDashboardController : ControllerBase
 
             var invoiceRepo = _unitOfWork.Repository<Invoice>();
 
-            // Use database aggregations
             var totalInvoices = await invoiceRepo.CountAsync(null, cancellationToken);
             var paidInvoices = await invoiceRepo.CountAsync(i => i.Status == "paid", cancellationToken);
             var pendingInvoices = await invoiceRepo.CountAsync(i => i.Status == "pending", cancellationToken);
@@ -338,7 +325,6 @@ public class AdminDashboardController : ControllerBase
             var todayStart = now.Date;
             var yesterdayStart = todayStart.AddDays(-1);
 
-            // Today's stats
             var todayCalls = await _unitOfWork.Calls
                 .CountAsync(c => c.CreatedAt >= todayStart, cancellationToken);
 
@@ -349,7 +335,6 @@ public class AdminDashboardController : ControllerBase
                 .FindAsync(i => i.CreatedAt >= todayStart && i.Status == "paid", cancellationToken))
                 .Sum(i => i.Total);
 
-            // Yesterday's stats for comparison
             var yesterdayCalls = await _unitOfWork.Calls
                 .CountAsync(c => c.CreatedAt >= yesterdayStart && c.CreatedAt < todayStart, cancellationToken);
 
@@ -392,7 +377,6 @@ public class AdminDashboardController : ControllerBase
         {
             var alerts = new List<object>();
 
-            // Check for expiring trials (use UserTrial entity, source of truth)
             var expiringTrials = await _unitOfWork.Repository<Domain.Entities.UserTrial>().FindAsync(
                 t => t.IsTrial && t.TrialEndsAt.HasValue &&
                      t.TrialEndsAt.Value <= DateTime.UtcNow.AddDays(7) &&
@@ -410,7 +394,6 @@ public class AdminDashboardController : ControllerBase
                 });
             }
 
-            // Check for overdue invoices
             var overdueInvoices = await _unitOfWork.Repository<Invoice>()
                 .FindAsync(i => i.Status == "overdue", cancellationToken);
 
@@ -426,7 +409,7 @@ public class AdminDashboardController : ControllerBase
                 });
             }
 
-            // Check for users with low activity (based on UpdatedAt field as proxy for activity)
+            // UpdatedAt is used as a proxy for activity since there's no dedicated last-activity field
             var lowActivityUsers = await _unitOfWork.Users.FindAsync(
                 u => u.UpdatedAt.HasValue &&
                      u.UpdatedAt.Value < DateTime.UtcNow.AddDays(-30) &&

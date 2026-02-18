@@ -1,13 +1,10 @@
+using System.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using SpeakHalo.Application.Interfaces;
 
 namespace SpeakHalo.Infrastructure.Services;
 
-/// <summary>
-/// Local filesystem storage implementation
-/// Stores files in wwwroot/uploads or configured directory
-/// </summary>
 public class LocalFileStorageService : IFileStorageService
 {
     private readonly string _basePath;
@@ -20,16 +17,39 @@ public class LocalFileStorageService : IFileStorageService
     {
         _logger = logger;
 
-        // Get storage path from configuration, default to wwwroot/uploads
-        _basePath = configuration["Storage:LocalPath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+        _basePath = Path.GetFullPath(configuration["Storage:LocalPath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads"));
         _baseUrl = configuration["Storage:BaseUrl"] ?? "/uploads";
 
-        // Ensure base directory exists
         if (!Directory.Exists(_basePath))
         {
             Directory.CreateDirectory(_basePath);
             _logger.LogInformation("Created storage directory: {Path}", _basePath);
         }
+    }
+
+    private string ResolveSafePath(string relativePath)
+    {
+        var fullPath = Path.GetFullPath(Path.Combine(_basePath, relativePath));
+        if (!fullPath.StartsWith(_basePath, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Path traversal attempt detected: {Path}", relativePath);
+            throw new SecurityException("Invalid file path detected");
+        }
+        return fullPath;
+    }
+
+    private string ResolveSafeDirectory(string? folder)
+    {
+        if (string.IsNullOrEmpty(folder))
+            return _basePath;
+
+        var fullPath = Path.GetFullPath(Path.Combine(_basePath, folder));
+        if (!fullPath.StartsWith(_basePath, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Path traversal attempt detected in folder: {Folder}", folder);
+            throw new SecurityException("Invalid folder path detected");
+        }
+        return fullPath;
     }
 
     public async Task<string> SaveFileAsync(
@@ -41,22 +61,19 @@ public class LocalFileStorageService : IFileStorageService
     {
         try
         {
-            var directory = string.IsNullOrEmpty(folder)
-                ? _basePath
-                : Path.Combine(_basePath, folder);
+            var directory = ResolveSafeDirectory(folder);
 
             if (!Directory.Exists(directory))
             {
                 Directory.CreateDirectory(directory);
             }
 
-            var filePath = Path.Combine(directory, fileName);
+            var filePath = ResolveSafePath(Path.Combine(folder ?? "", fileName));
 
             await File.WriteAllBytesAsync(filePath, fileData, cancellationToken);
 
             _logger.LogInformation("Saved file: {FileName}, Size: {Size} bytes", fileName, fileData.Length);
 
-            // Return relative path
             return string.IsNullOrEmpty(folder)
                 ? fileName
                 : Path.Combine(folder, fileName);
@@ -77,16 +94,14 @@ public class LocalFileStorageService : IFileStorageService
     {
         try
         {
-            var directory = string.IsNullOrEmpty(folder)
-                ? _basePath
-                : Path.Combine(_basePath, folder);
+            var directory = ResolveSafeDirectory(folder);
 
             if (!Directory.Exists(directory))
             {
                 Directory.CreateDirectory(directory);
             }
 
-            var filePath = Path.Combine(directory, fileName);
+            var filePath = ResolveSafePath(Path.Combine(folder ?? "", fileName));
 
             using (var fileStreamOut = new FileStream(filePath, FileMode.Create, FileAccess.Write))
             {
@@ -95,7 +110,6 @@ public class LocalFileStorageService : IFileStorageService
 
             _logger.LogInformation("Saved file from stream: {FileName}", fileName);
 
-            // Return relative path
             return string.IsNullOrEmpty(folder)
                 ? fileName
                 : Path.Combine(folder, fileName);
@@ -113,7 +127,7 @@ public class LocalFileStorageService : IFileStorageService
     {
         try
         {
-            var fullPath = Path.Combine(_basePath, filePath);
+            var fullPath = ResolveSafePath(filePath);
 
             if (!File.Exists(fullPath))
             {
@@ -135,7 +149,7 @@ public class LocalFileStorageService : IFileStorageService
     {
         try
         {
-            var fullPath = Path.Combine(_basePath, filePath);
+            var fullPath = ResolveSafePath(filePath);
 
             if (!File.Exists(fullPath))
             {
@@ -157,7 +171,7 @@ public class LocalFileStorageService : IFileStorageService
     {
         try
         {
-            var fullPath = Path.Combine(_basePath, filePath);
+            var fullPath = ResolveSafePath(filePath);
 
             if (!File.Exists(fullPath))
             {
@@ -181,7 +195,7 @@ public class LocalFileStorageService : IFileStorageService
         string filePath,
         CancellationToken cancellationToken = default)
     {
-        var fullPath = Path.Combine(_basePath, filePath);
+        var fullPath = ResolveSafePath(filePath);
         return Task.FromResult(File.Exists(fullPath));
     }
 
@@ -191,7 +205,7 @@ public class LocalFileStorageService : IFileStorageService
     {
         try
         {
-            var fullPath = Path.Combine(_basePath, filePath);
+            var fullPath = ResolveSafePath(filePath);
 
             if (!File.Exists(fullPath))
             {
@@ -225,19 +239,17 @@ public class LocalFileStorageService : IFileStorageService
         string? destinationFolder = null,
         CancellationToken cancellationToken = default)
     {
-        var sourceFullPath = Path.Combine(_basePath, sourceFilePath);
+        var sourceFullPath = ResolveSafePath(sourceFilePath);
 
         if (!File.Exists(sourceFullPath))
             throw new FileNotFoundException($"Source file not found: {sourceFilePath}");
 
-        var destinationDirectory = string.IsNullOrEmpty(destinationFolder)
-            ? _basePath
-            : Path.Combine(_basePath, destinationFolder);
+        var destinationDirectory = ResolveSafeDirectory(destinationFolder);
 
         if (!Directory.Exists(destinationDirectory))
             Directory.CreateDirectory(destinationDirectory);
 
-        var destinationFullPath = Path.Combine(destinationDirectory, destinationFileName);
+        var destinationFullPath = ResolveSafePath(Path.Combine(destinationFolder ?? "", destinationFileName));
         File.Copy(sourceFullPath, destinationFullPath, overwrite: true);
 
         _logger.LogInformation("Copied file: {Source} -> {Destination}", sourceFilePath, destinationFileName);
@@ -255,19 +267,17 @@ public class LocalFileStorageService : IFileStorageService
         string? destinationFolder = null,
         CancellationToken cancellationToken = default)
     {
-        var sourceFullPath = Path.Combine(_basePath, sourceFilePath);
+        var sourceFullPath = ResolveSafePath(sourceFilePath);
 
         if (!File.Exists(sourceFullPath))
             throw new FileNotFoundException($"Source file not found: {sourceFilePath}");
 
-        var destinationDirectory = string.IsNullOrEmpty(destinationFolder)
-            ? _basePath
-            : Path.Combine(_basePath, destinationFolder);
+        var destinationDirectory = ResolveSafeDirectory(destinationFolder);
 
         if (!Directory.Exists(destinationDirectory))
             Directory.CreateDirectory(destinationDirectory);
 
-        var destinationFullPath = Path.Combine(destinationDirectory, destinationFileName);
+        var destinationFullPath = ResolveSafePath(Path.Combine(destinationFolder ?? "", destinationFileName));
         File.Move(sourceFullPath, destinationFullPath, overwrite: true);
 
         _logger.LogInformation("Moved file: {Source} -> {Destination}", sourceFilePath, destinationFileName);

@@ -6,11 +6,6 @@ using SpeakHalo.Domain.Interfaces.Repositories;
 
 namespace SpeakHalo.Application.Services;
 
-/// <summary>
-/// Production-ready on-demand phone number purchasing service
-/// Purchases numbers from Twilio ONLY when user registers
-/// NO pre-provisioning, NO fake numbers, REAL production implementation
-/// </summary>
 public class OnDemandPhoneNumberService
 {
     private readonly ITwilioService _twilioService;
@@ -31,10 +26,6 @@ public class OnDemandPhoneNumberService
         _logger = logger;
     }
 
-    /// <summary>
-    /// Purchase and assign phone number to user during registration
-    /// This is called ONCE per user, at registration time
-    /// </summary>
     public async Task<(bool Success, PhoneNumber? PhoneNumber, string? ErrorMessage)>
         PurchaseAndAssignNumberAsync(
             string userId,
@@ -47,7 +38,6 @@ public class OnDemandPhoneNumberService
 
         try
         {
-            // Step 1: Check if user already has a number
             var existingNumbers = await _phoneNumberRepo.GetByUserIdAsync(userId, cancellationToken);
             if (existingNumbers.Any())
             {
@@ -55,7 +45,6 @@ public class OnDemandPhoneNumberService
                 return (false, null, "User already has a phone number assigned");
             }
 
-            // Step 2: Purchase number from Twilio with retry logic (exponential backoff)
             TwilioPhoneNumberResult? twilioNumber = null;
             Exception? lastException = null;
 
@@ -75,19 +64,18 @@ public class OnDemandPhoneNumberService
                         Capabilities = PhoneNumberCapabilities.Voice | PhoneNumberCapabilities.SMS
                     }, cancellationToken);
 
-                    break; // Success, exit retry loop
+                    break;
                 }
                 catch (Exception ex) when (IsTransientError(ex) && attempt < MAX_RETRIES)
                 {
                     lastException = ex;
-                    var delaySeconds = Math.Pow(2, attempt); // Exponential backoff: 2s, 4s, 8s
+                    var delaySeconds = Math.Pow(2, attempt);
                     _logger.LogWarning(ex, "Retry {Attempt}/{Max} after {Delay}s due to transient error",
                         attempt, MAX_RETRIES, delaySeconds);
                     await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
                 }
                 catch (Exception ex)
                 {
-                    // Non-transient error or last retry failed
                     lastException = ex;
                     break;
                 }
@@ -95,7 +83,7 @@ public class OnDemandPhoneNumberService
 
             if (lastException != null && twilioNumber == null)
             {
-                throw lastException; // Re-throw to be caught by outer catch blocks
+                throw lastException;
             }
 
             if (twilioNumber == null)
@@ -108,7 +96,6 @@ public class OnDemandPhoneNumberService
                 "Successfully purchased number {Number} (SID: {Sid}) from Twilio",
                 twilioNumber.PhoneNumber, twilioNumber.Sid);
 
-            // Step 3: Create PhoneNumber entity and assign to user
             var phoneNumber = new PhoneNumber
             {
                 UserId = userId,
@@ -133,7 +120,6 @@ public class OnDemandPhoneNumberService
                 "Phone number {Number} successfully assigned to user {UserId}",
                 phoneNumber.Number, userId);
 
-            // Step 4: Configure number for WhatsApp (optional, can be done later)
             try
             {
                 await _twilioService.ConfigureNumberForWhatsAppAsync(twilioNumber.Sid, cancellationToken);
@@ -169,34 +155,16 @@ public class OnDemandPhoneNumberService
         }
     }
 
-    /// <summary>
-    /// Check if error is transient and should be retried
-    /// </summary>
     private bool IsTransientError(Exception ex)
     {
-        // Retry on:
-        // - Network timeouts
-        // - Twilio 429 (rate limit) - will succeed after backoff
-        // - Twilio 503 (service unavailable) - temporary
-        // - Twilio 500 (internal server error) - might be transient
-
         if (ex is TwilioRateLimitException) return true;
         if (ex is TwilioServiceUnavailableException) return true;
         if (ex is HttpRequestException) return true;
         if (ex is TaskCanceledException) return true;
 
-        // Do NOT retry on:
-        // - 400 (bad request) - won't succeed
-        // - 404 (not found) - won't succeed
-        // - No numbers available - won't succeed
-        // - Regulatory issues - won't succeed
-
         return false;
     }
 
-    /// <summary>
-    /// Get available countries for phone number purchase
-    /// </summary>
     public async Task<List<string>> GetAvailableCountriesAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -206,15 +174,10 @@ public class OnDemandPhoneNumberService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error fetching available countries from Twilio");
-            // Return common countries as fallback
             return new List<string> { "US", "CA", "GB", "AU", "IE" };
         }
     }
 
-    /// <summary>
-    /// Check if phone numbers are available in a country before registration
-    /// (Optional pre-check to improve UX)
-    /// </summary>
     public async Task<bool> AreNumbersAvailableAsync(string countryCode, CancellationToken cancellationToken = default)
     {
         try
@@ -229,7 +192,6 @@ public class OnDemandPhoneNumberService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error checking availability for {Country}", countryCode);
-            // Assume available if check fails
             return true;
         }
     }

@@ -5,10 +5,6 @@ using System.Security.Claims;
 
 namespace SpeakHalo.API.Controllers;
 
-/// <summary>
-/// Usage dashboard - provides usage overview for admin.
-/// Pending rework: billing/overage system removed, admin sets limits per user directly.
-/// </summary>
 [ApiController]
 [Route("api/v1/[controller]")]
 [Authorize]
@@ -25,9 +21,6 @@ public class UsageDashboardController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Get current usage overview for the authenticated user
-    /// </summary>
     [HttpGet("overview")]
     public async Task<IActionResult> GetUsageOverview()
     {
@@ -47,11 +40,6 @@ public class UsageDashboardController : ControllerBase
         }
     }
 
-    #region Admin Endpoints
-
-    /// <summary>
-    /// Get usage overview for a specific user (Admin only)
-    /// </summary>
     [HttpGet("admin/user/{userId}/overview")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetUserOverview(string userId)
@@ -71,5 +59,4 @@ public class UsageDashboardController : ControllerBase
         }
     }
 
-    #endregion
 }

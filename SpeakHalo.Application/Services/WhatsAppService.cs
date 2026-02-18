@@ -47,7 +47,6 @@ public class WhatsAppService : IWhatsAppService
             if (user == null)
                 return Result<WhatsAppMessageResponse>.Failure(ErrorMessages.NotFound("User"));
 
-            // Look up user's phone number from PhoneNumber entity
             var userPhoneNumbers = await _unitOfWork.Repository<PhoneNumber>()
                 .FindAsync(p => p.UserId == request.UserId && p.IsActive && p.WhatsAppEnabled, cancellationToken);
             var userPhone = userPhoneNumbers.FirstOrDefault();
@@ -88,7 +87,6 @@ public class WhatsAppService : IWhatsAppService
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // Track outbound WhatsApp message for billing
             await _usageTracking.TrackWhatsAppMessageAsync(request.UserId);
 
             return Result<WhatsAppMessageResponse>.Success(MapToMessageResponse(message));
@@ -181,20 +179,19 @@ public class WhatsAppService : IWhatsAppService
     {
         try
         {
-            // Idempotency: check if message with this Twilio SID already exists
+            // Idempotency: skip if this Twilio SID was already processed
             if (!string.IsNullOrEmpty(twilioSid))
             {
                 var existing = await _unitOfWork.WhatsAppMessages.GetByTwilioSidAsync(twilioSid, cancellationToken);
                 if (existing != null)
-                    return Result<bool>.Success(true); // Already processed
+                    return Result<bool>.Success(true);
             }
 
             var conversation = await _unitOfWork.WhatsAppConversations.GetByPhoneNumbersAsync(toNumber, fromNumber, cancellationToken);
 
             if (conversation == null)
             {
-                // Look up the user who owns the "To" phone number
-                // Strip whatsapp: prefix — PhoneNumber.Number stores E.164 format without prefix
+                // Strip whatsapp: prefix -- PhoneNumber.Number stores E.164 format without prefix
                 var normalizedToNumber = toNumber.Replace("whatsapp:", "");
                 var phoneNumbers = await _unitOfWork.Repository<PhoneNumber>()
                     .FindAsync(p => p.Number == normalizedToNumber && p.IsActive, cancellationToken);
@@ -202,7 +199,6 @@ public class WhatsAppService : IWhatsAppService
 
                 string? userId = phoneNumber?.UserId;
 
-                // Fallback: if no phone number match, try finding a user with this business phone
                 if (string.IsNullOrEmpty(userId))
                 {
                     _logger.LogWarning("No phone number record found for {ToNumber}, unable to route WhatsApp message", toNumber);
@@ -212,7 +208,6 @@ public class WhatsAppService : IWhatsAppService
                 conversation = await GetOrCreateWhatsAppConversationAsync(userId, toNumber, fromNumber, null, cancellationToken);
             }
 
-            // Recognize returning customer (opt-in, multi-tenant)
             if (string.IsNullOrEmpty(conversation.CustomerId))
             {
                 var recognized = await _callerRecognition.RecognizeCallerAsync(
@@ -247,7 +242,6 @@ public class WhatsAppService : IWhatsAppService
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // Download and store media file if present
             if (!string.IsNullOrEmpty(mediaUrl))
             {
                 try
@@ -284,7 +278,6 @@ public class WhatsAppService : IWhatsAppService
                 }
             }
 
-            // Process image with photo-to-quote if it's an image
             if (!string.IsNullOrEmpty(mediaUrl) && mediaType?.StartsWith("image/") == true)
             {
                 try
@@ -306,10 +299,8 @@ public class WhatsAppService : IWhatsAppService
                     {
                         var quoteData = photoQuoteResult.Data;
 
-                        // Track image analysis usage for billing
                         await _usageTracking.TrackImageAnalysisAsync(conversation.UserId, mediaUrl);
 
-                        // Store analysis in message AiContext
                         message.AiContext = System.Text.Json.JsonSerializer.Serialize(new
                         {
                             confidence = quoteData.ConfidenceScore,
@@ -319,7 +310,6 @@ public class WhatsAppService : IWhatsAppService
                         });
                         _unitOfWork.WhatsAppMessages.Update(message);
 
-                        // Send AI response based on workflow
                         var aiResponse = quoteData.CustomerMessage;
 
                         var twilioSendResult = await _twilioService.SendWhatsAppMessageAsync(
@@ -331,7 +321,6 @@ public class WhatsAppService : IWhatsAppService
 
                         if (twilioSendResult.IsSuccess)
                         {
-                            // Save AI response message
                             var aiMessage = new WhatsAppMessage
                             {
                                 ConversationId = conversation.Id,
@@ -351,7 +340,6 @@ public class WhatsAppService : IWhatsAppService
 
                             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                            // Track outbound WhatsApp auto-reply for billing
                             await _usageTracking.TrackWhatsAppMessageAsync(conversation.UserId);
 
                             _logger.LogInformation(

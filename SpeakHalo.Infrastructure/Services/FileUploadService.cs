@@ -10,11 +10,10 @@ public class FileUploadService : IFileUploadService
 {
     private readonly string _uploadBasePath;
     private readonly ILogger<FileUploadService> _logger;
-    private readonly long _maxFileSizeBytes = 10 * 1024 * 1024; // 10MB default
+    private readonly long _maxFileSizeBytes = 10 * 1024 * 1024;
     private static readonly string[] AllowedImageExtensions = { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
     private static readonly string[] AllowedDocumentExtensions = { ".pdf", ".doc", ".docx", ".txt", ".csv", ".xlsx" };
 
-    // MIME type validation mappings
     private static readonly Dictionary<string, List<string>> AllowedMimeTypes = new()
     {
         { ".jpg", new List<string> { "image/jpeg", "image/pjpeg" } },
@@ -30,7 +29,6 @@ public class FileUploadService : IFileUploadService
         { ".xlsx", new List<string> { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } }
     };
 
-    // File signature (magic bytes) validation
     private static readonly Dictionary<string, byte[][]> FileSignatures = new()
     {
         { ".jpg", new[] { new byte[] { 0xFF, 0xD8, 0xFF } } },
@@ -38,8 +36,8 @@ public class FileUploadService : IFileUploadService
         { ".png", new[] { new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A } } },
         { ".gif", new[] { new byte[] { 0x47, 0x49, 0x46, 0x38 } } },
         { ".pdf", new[] { new byte[] { 0x25, 0x50, 0x44, 0x46 } } },
-        { ".docx", new[] { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } }, // ZIP format
-        { ".xlsx", new[] { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } }  // ZIP format
+        { ".docx", new[] { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } },
+        { ".xlsx", new[] { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } }
     };
 
     public FileUploadService(IConfiguration configuration, ILogger<FileUploadService> logger)
@@ -47,7 +45,6 @@ public class FileUploadService : IFileUploadService
         _uploadBasePath = configuration["FileUpload:BasePath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
         _logger = logger;
 
-        // Ensure upload directory exists
         if (!Directory.Exists(_uploadBasePath))
         {
             Directory.CreateDirectory(_uploadBasePath);
@@ -66,21 +63,17 @@ public class FileUploadService : IFileUploadService
         if (!IsValidExtension(extension))
             throw new ArgumentException($"File type '{extension}' is not allowed");
 
-        // Validate MIME type
         if (!IsValidMimeType(file, extension))
             throw new ArgumentException($"File content does not match the expected type for '{extension}'");
 
-        // Validate file signature (magic bytes)
         if (!await IsValidFileSignatureAsync(file, extension, cancellationToken))
             throw new ArgumentException($"File signature validation failed for '{extension}'");
 
-        // Sanitize folder name to prevent path traversal
         var sanitizedFolder = SanitizeFolderPath(folder);
 
         var uniqueFileName = GenerateUniqueFileName(file.FileName);
         var folderPath = Path.Combine(_uploadBasePath, sanitizedFolder);
 
-        // Validate that the resulting path is within the upload base path (prevent path traversal)
         var fullFolderPath = Path.GetFullPath(folderPath);
         var fullBasePath = Path.GetFullPath(_uploadBasePath);
 
@@ -97,7 +90,6 @@ public class FileUploadService : IFileUploadService
 
         var filePath = Path.Combine(fullFolderPath, uniqueFileName);
 
-        // Additional path traversal check on final file path
         var fullFilePath = Path.GetFullPath(filePath);
         if (!fullFilePath.StartsWith(fullBasePath, StringComparison.OrdinalIgnoreCase))
         {
@@ -112,7 +104,6 @@ public class FileUploadService : IFileUploadService
 
         _logger.LogInformation("File uploaded successfully: {FilePath}", fullFilePath);
 
-        // Return relative path
         return Path.Combine(sanitizedFolder, uniqueFileName).Replace("\\", "/");
     }
 
@@ -135,7 +126,6 @@ public class FileUploadService : IFileUploadService
         {
             var fullPath = Path.Combine(_uploadBasePath, filePath);
 
-            // Validate that the resolved path is within the upload base path (prevent path traversal)
             var resolvedPath = Path.GetFullPath(fullPath);
             var fullBasePath = Path.GetFullPath(_uploadBasePath);
 
@@ -196,7 +186,6 @@ public class FileUploadService : IFileUploadService
         var extension = GetFileExtension(originalFileName);
         var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(originalFileName);
 
-        // Sanitize filename
         fileNameWithoutExtension = SanitizeFileName(fileNameWithoutExtension);
 
         var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
@@ -213,11 +202,9 @@ public class FileUploadService : IFileUploadService
 
     private string SanitizeFileName(string fileName)
     {
-        // Remove invalid characters
         var invalidChars = Path.GetInvalidFileNameChars();
         var sanitized = string.Join("_", fileName.Split(invalidChars, StringSplitOptions.RemoveEmptyEntries));
 
-        // Limit length
         if (sanitized.Length > 50)
             sanitized = sanitized.Substring(0, 50);
 
@@ -229,17 +216,14 @@ public class FileUploadService : IFileUploadService
         if (string.IsNullOrWhiteSpace(folder))
             return string.Empty;
 
-        // Remove dangerous path components
         folder = folder.Replace("..", string.Empty)
                        .Replace("~", string.Empty)
                        .Trim()
                        .Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-        // Remove invalid path characters
         var invalidChars = Path.GetInvalidPathChars();
         var sanitized = string.Join("_", folder.Split(invalidChars, StringSplitOptions.RemoveEmptyEntries));
 
-        // Normalize path separators
         sanitized = sanitized.Replace('/', Path.DirectorySeparatorChar)
                             .Replace('\\', Path.DirectorySeparatorChar);
 

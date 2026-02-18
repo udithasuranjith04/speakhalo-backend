@@ -110,7 +110,6 @@ public class CallsController : ControllerBase
         if (!result.IsSuccess)
             return BadRequest(result);
 
-        // Track AI minutes usage (round up to nearest minute, minimum 1)
         var minutesUsed = Math.Max(1, (int)Math.Ceiling(durationSeconds / 60.0));
         await _usageTracking.TrackAIMinutesAsync(userId, minutesUsed);
 

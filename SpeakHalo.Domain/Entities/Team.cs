@@ -17,9 +17,6 @@ public class Team : BaseEntity
     public virtual ICollection<TeamInvite> Invites { get; set; } = new List<TeamInvite>();
 }
 
-/// <summary>
-/// Represents a user's membership in a team with a specific role.
-/// </summary>
 public class TeamMember : BaseEntity
 {
     public string TeamId { get; set; } = string.Empty;
@@ -31,9 +28,7 @@ public class TeamMember : BaseEntity
     public virtual User User { get; set; } = null!;
 }
 
-/// <summary>
-/// Represents an invitation to join a team. Invites expire after 7 days.
-/// </summary>
+/// <summary>Invites expire after 7 days.</summary>
 public class TeamInvite : BaseEntity
 {
     public string TeamId { get; set; } = string.Empty;

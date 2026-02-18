@@ -37,9 +37,6 @@ public class AdminPricingPlansController : ControllerBase
         _auditLogService = auditLogService;
     }
 
-    /// <summary>
-    /// List all pricing plans (active and inactive)
-    /// </summary>
     [HttpGet]
     public async Task<IActionResult> ListPlans(CancellationToken cancellationToken = default)
     {
@@ -51,9 +48,6 @@ public class AdminPricingPlansController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// List only active pricing plans (for plan selection dropdowns)
-    /// </summary>
     [HttpGet("active")]
     public async Task<IActionResult> ListActivePlans(CancellationToken cancellationToken = default)
     {
@@ -65,9 +59,6 @@ public class AdminPricingPlansController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Get plan details by ID
-    /// </summary>
     [HttpGet("{planId}")]
     public async Task<IActionResult> GetPlan(string planId, CancellationToken cancellationToken = default)
     {
@@ -80,9 +71,6 @@ public class AdminPricingPlansController : ControllerBase
         return Ok(MapPlanResponse(plan));
     }
 
-    /// <summary>
-    /// Create a new pricing plan
-    /// </summary>
     [HttpPost]
     public async Task<IActionResult> CreatePlan(
         [FromBody] CreatePricingPlanRequest request,
@@ -95,7 +83,6 @@ public class AdminPricingPlansController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest(new { error = "Plan name is required" });
 
-        // Check for duplicate name
         var existing = await _unitOfWork.Repository<PricingPlan>()
             .FindAsync(p => p.Name == request.Name && !p.IsDeleted, cancellationToken);
         if (existing.Any())
@@ -143,9 +130,6 @@ public class AdminPricingPlansController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Update an existing pricing plan
-    /// </summary>
     [HttpPut("{planId}")]
     public async Task<IActionResult> UpdatePlan(
         string planId,
@@ -164,7 +148,6 @@ public class AdminPricingPlansController : ControllerBase
 
         var oldName = plan.Name;
 
-        // Check for duplicate name if name is changing
         if (request.Name != null && request.Name.Trim() != plan.Name)
         {
             var existing = await _unitOfWork.Repository<PricingPlan>()
@@ -173,7 +156,6 @@ public class AdminPricingPlansController : ControllerBase
                 return BadRequest(new { error = "A pricing plan with this name already exists" });
         }
 
-        // Apply updates (only non-null values)
         if (request.Name != null) plan.Name = request.Name.Trim();
         if (request.Description != null) plan.Description = request.Description.Trim();
         if (request.DisplayPrice.HasValue) plan.DisplayPrice = request.DisplayPrice.Value;
@@ -211,9 +193,6 @@ public class AdminPricingPlansController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Soft-delete a pricing plan
-    /// </summary>
     [HttpDelete("{planId}")]
     public async Task<IActionResult> DeletePlan(string planId, CancellationToken cancellationToken = default)
     {
@@ -256,9 +235,6 @@ public class AdminPricingPlansController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Toggle a pricing plan active/inactive
-    /// </summary>
     [HttpPut("{planId}/toggle")]
     public async Task<IActionResult> TogglePlan(string planId, CancellationToken cancellationToken = default)
     {
@@ -327,8 +303,6 @@ public class AdminPricingPlansController : ControllerBase
     }
 }
 
-#region Request DTOs
-
 public class CreatePricingPlanRequest
 {
     public string Name { get; set; } = string.Empty;
@@ -360,5 +334,3 @@ public class UpdatePricingPlanRequest
     public Dictionary<string, bool>? EnabledFeatures { get; set; }
     public int? SortOrder { get; set; }
 }
-
-#endregion

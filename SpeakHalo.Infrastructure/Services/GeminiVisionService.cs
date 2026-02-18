@@ -11,9 +11,6 @@ using SpeakHalo.Shared.Models;
 
 namespace SpeakHalo.Infrastructure.Services;
 
-/// <summary>
-/// Gemini Vision service for analyzing equipment photos
-/// </summary>
 public class GeminiVisionService : IAiVisionService
 {
     private readonly HttpClient _httpClient;

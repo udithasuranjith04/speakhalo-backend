@@ -262,15 +262,12 @@ public class TwilioService : ITwilioService
         }
     }
 
-    // On-demand phone number purchasing methods
-
     public async Task<TwilioPhoneNumberResult?> PurchasePhoneNumberAsync(
         PurchasePhoneNumberOptions options,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            // Step 1: Search for available numbers
             var availableNumbers = await Twilio.Rest.Api.V2010.Account.AvailablePhoneNumberCountry.LocalResource.ReadAsync(
                 pathCountryCode: options.CountryCode,
                 voiceEnabled: options.VoiceEnabled,
@@ -286,7 +283,6 @@ public class TwilioService : ITwilioService
                     $"No phone numbers available for country: {options.CountryCode}");
             }
 
-            // Step 2: Purchase the number
             var purchasedNumber = await IncomingPhoneNumberResource.CreateAsync(
                 phoneNumber: firstNumber.PhoneNumber,
                 voiceUrl: new Uri(_voiceWebhookUrl),
@@ -304,7 +300,6 @@ public class TwilioService : ITwilioService
         }
         catch (Twilio.Exceptions.ApiException ex)
         {
-            // Convert Twilio API exceptions to custom exceptions
             if (ex.Status == 429)
             {
                 throw new TwilioRateLimitException("Twilio rate limit exceeded", ex);
@@ -432,7 +427,6 @@ public class TwilioService : ITwilioService
     {
         try
         {
-            // Configure the number to handle WhatsApp messages
             await IncomingPhoneNumberResource.UpdateAsync(
                 pathSid: phoneNumberSid,
                 smsUrl: new Uri(_whatsAppWebhookUrl),

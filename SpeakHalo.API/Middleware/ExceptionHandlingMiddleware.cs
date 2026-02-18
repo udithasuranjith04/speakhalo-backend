@@ -29,7 +29,6 @@ public class ExceptionHandlingMiddleware
         }
         catch (Exception ex)
         {
-            // Log the full exception with stack trace for debugging
             _logger.LogError(ex, "An unhandled exception occurred. Path: {Path}, Method: {Method}",
                 context.Request.Path, context.Request.Method);
             await HandleExceptionAsync(context, ex);
@@ -40,7 +39,6 @@ public class ExceptionHandlingMiddleware
     {
         context.Response.ContentType = "application/json";
 
-        // Determine status code based on exception type
         var statusCode = exception switch
         {
             ArgumentException or ArgumentNullException => HttpStatusCode.BadRequest,
@@ -52,13 +50,11 @@ public class ExceptionHandlingMiddleware
 
         context.Response.StatusCode = (int)statusCode;
 
-        // In production, hide detailed error messages
         string errorMessage;
         object? errorDetails = null;
 
         if (_environment.IsDevelopment())
         {
-            // Development: Show full error details for debugging
             errorMessage = exception.Message;
             errorDetails = new
             {
@@ -69,7 +65,6 @@ public class ExceptionHandlingMiddleware
         }
         else
         {
-            // Production: Generic error messages only
             errorMessage = statusCode switch
             {
                 HttpStatusCode.BadRequest => "The request was invalid. Please check your input and try again.",

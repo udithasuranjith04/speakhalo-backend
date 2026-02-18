@@ -10,52 +10,31 @@ public class Industry : BaseEntity
 {
     public ServiceType ServiceType { get; set; }
     public string Name { get; set; } = string.Empty;
-    public string Code { get; set; } = string.Empty; // cleaning
+    public string Code { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
 
-    /// <summary>
-    /// JSON array of industry keywords for AI context (e.g., ["cleaning", "housekeeping", "deep clean", "sanitization"])
-    /// </summary>
+    /// <summary>JSON array of industry keywords for AI context</summary>
     public string? Keywords { get; set; }
 
-    /// <summary>
-    /// JSON array of common services (e.g., ["regular cleaning", "deep cleaning", "move-out cleaning"])
-    /// </summary>
+    /// <summary>JSON array of common services</summary>
     public string? CommonServices { get; set; }
 
-    /// <summary>
-    /// JSON array of common equipment brands/models (e.g., ["commercial vacuum", "carpet extractor", "pressure washer"])
-    /// </summary>
+    /// <summary>JSON array of common equipment brands/models</summary>
     public string? CommonEquipment { get; set; }
 
-    /// <summary>
-    /// JSON array of typical issues for AI pattern recognition (e.g., ["stubborn stains", "mold in grout", "hard water deposits"])
-    /// </summary>
+    /// <summary>JSON array of typical issues for AI pattern recognition</summary>
     public string? TypicalIssues { get; set; }
 
-    /// <summary>
-    /// JSON array of common technical terms (e.g., ["HEPA filtration", "pH-neutral", "enzyme cleaner", "extraction"])
-    /// </summary>
+    /// <summary>JSON array of common technical terms</summary>
     public string? TechnicalTerms { get; set; }
 
-    /// <summary>
-    /// JSON array of seasonal considerations (e.g., ["peak season: summer", "prepare for winter"])
-    /// </summary>
+    /// <summary>JSON array of seasonal considerations</summary>
     public string? SeasonalConsiderations { get; set; }
 
-    /// <summary>
-    /// JSON array of emergency indicators (e.g., ["biohazard cleanup", "flood damage", "sewage backup"])
-    /// </summary>
+    /// <summary>JSON array of emergency indicators</summary>
     public string? EmergencyIndicators { get; set; }
 
-    /// <summary>
-    /// Average service call duration in minutes
-    /// </summary>
     public int? AverageServiceDuration { get; set; }
-
-    /// <summary>
-    /// Typical price range for standard service calls
-    /// </summary>
     public string? TypicalPriceRange { get; set; }
 
     public bool IsActive { get; set; } = true;

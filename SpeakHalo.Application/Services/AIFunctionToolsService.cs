@@ -9,22 +9,13 @@ namespace SpeakHalo.Application.Services;
 public class AIFunctionToolsService : IAIFunctionToolsService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IAppointmentService _appointmentService;
-    private readonly IQuoteService _quoteService;
-    private readonly ICustomerService _customerService;
     private readonly ILogger<AIFunctionToolsService> _logger;
 
     public AIFunctionToolsService(
         IUnitOfWork unitOfWork,
-        IAppointmentService appointmentService,
-        IQuoteService quoteService,
-        ICustomerService customerService,
         ILogger<AIFunctionToolsService> logger)
     {
         _unitOfWork = unitOfWork;
-        _appointmentService = appointmentService;
-        _quoteService = quoteService;
-        _customerService = customerService;
         _logger = logger;
     }
 
@@ -34,7 +25,6 @@ public class AIFunctionToolsService : IAIFunctionToolsService
         {
             _logger.LogInformation("AI booking appointment for user {UserId}", userId);
 
-            // Find or create customer
             var customers = await _unitOfWork.Repository<Customer>()
                 .FindAsync(c => c.UserId == userId && c.Phone == parameters.PhoneNumber, cancellationToken);
 
@@ -53,13 +43,11 @@ public class AIFunctionToolsService : IAIFunctionToolsService
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
 
-            // Parse service type enum
             if (!Enum.TryParse<ServiceType>(parameters.ServiceType, true, out var serviceType))
             {
-                serviceType = ServiceType.Cleaning; // Default
+                serviceType = ServiceType.Cleaning;
             }
 
-            // Create appointment
             var appointment = new Appointment
             {
                 UserId = userId,
@@ -95,7 +83,6 @@ public class AIFunctionToolsService : IAIFunctionToolsService
         {
             _logger.LogInformation("AI creating quote for user {UserId}", userId);
 
-            // Find or create customer
             var customers = await _unitOfWork.Repository<Customer>()
                 .FindAsync(c => c.UserId == userId && c.Phone == parameters.PhoneNumber, cancellationToken);
 
@@ -114,7 +101,6 @@ public class AIFunctionToolsService : IAIFunctionToolsService
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
 
-            // Create quote
             var quote = new Quote
             {
                 UserId = userId,
@@ -178,7 +164,6 @@ public class AIFunctionToolsService : IAIFunctionToolsService
 
             customer.UpdatedAt = DateTime.UtcNow;
 
-            // Repository doesn't have UpdateAsync - just call SaveChanges
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return new
@@ -209,13 +194,11 @@ public class AIFunctionToolsService : IAIFunctionToolsService
 
             var bookedSlots = appointments.Select(a => a.ScheduledAt).ToList();
 
-            // Generate available time slots (9 AM to 5 PM, Monday-Friday)
             var availableSlots = new List<DateTime>();
             var currentDate = parameters.StartDate.Date;
 
             while (currentDate <= parameters.EndDate.Date)
             {
-                // Skip weekends
                 if (currentDate.DayOfWeek != DayOfWeek.Saturday && currentDate.DayOfWeek != DayOfWeek.Sunday)
                 {
                     for (int hour = 9; hour < 17; hour++)
