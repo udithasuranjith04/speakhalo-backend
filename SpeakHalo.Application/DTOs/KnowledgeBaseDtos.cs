@@ -7,7 +7,7 @@ public record CreateKnowledgeArticleRequest
 {
     public required string Title { get; init; }
     public required string Content { get; init; }
-    public required ServiceType Industry { get; init; }
+    public string? Industry { get; init; }
     public required string Category { get; init; }
     public List<string> Tags { get; init; } = new();
     public string? EquipmentType { get; init; }

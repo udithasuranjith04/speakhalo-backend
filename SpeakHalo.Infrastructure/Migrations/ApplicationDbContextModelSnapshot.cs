@@ -1311,6 +1311,9 @@ namespace SpeakHalo.Infrastructure.Migrations
                     b.Property<DateTime?>("LastServiceDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("double precision");
+
                     b.Property<string>("LeadQualification")
                         .IsRequired()
                         .HasColumnType("text");
@@ -1321,6 +1324,9 @@ namespace SpeakHalo.Infrastructure.Migrations
                     b.Property<string>("LeadStatus")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("double precision");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1599,6 +1605,69 @@ namespace SpeakHalo.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Industries");
+                });
+
+            modelBuilder.Entity("SpeakHalo.Domain.Entities.IndustryKnowledgeTemplate", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Industry")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastEditedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastEditedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Industry", "Category");
+
+                    b.HasIndex("Industry", "IsActive", "SortOrder");
+
+                    b.ToTable("IndustryKnowledgeTemplates");
                 });
 
             modelBuilder.Entity("SpeakHalo.Domain.Entities.Invoice", b =>

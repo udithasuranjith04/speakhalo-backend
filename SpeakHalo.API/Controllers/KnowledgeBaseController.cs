@@ -31,7 +31,7 @@ public class KnowledgeBaseController : ControllerBase
     /// Create a new knowledge base article (Admin only)
     /// </summary>
     [HttpPost("articles")]
-    [Authorize(Roles = "Admin,SuperAdmin")]
+    [Authorize(Roles = "Admin,SuperAdmin,Owner,Member")]
     [ProducesResponseType(typeof(KnowledgeArticleResponse), 201)]
     [ProducesResponseType(400)]
     public async Task<IActionResult> CreateArticle(
@@ -78,15 +78,15 @@ public class KnowledgeBaseController : ControllerBase
     [HttpGet("articles/search")]
     [ProducesResponseType(typeof(List<KnowledgeArticleResponse>), 200)]
     public async Task<IActionResult> SearchArticles(
-        [FromQuery] string query,
+        [FromQuery] string? query = null,
         [FromQuery] ServiceType? industry = null,
         [FromQuery] string? category = null,
         CancellationToken cancellationToken = default)
     {
         var searchRequest = new KnowledgeSearchRequest
         {
-            SearchQuery = query,
-            Industry = industry ?? ServiceType.Cleaning,
+            SearchQuery = query ?? string.Empty,
+            Industry = industry,
             Category = category
         };
 
@@ -104,7 +104,7 @@ public class KnowledgeBaseController : ControllerBase
     /// Update an existing knowledge base article (Admin only)
     /// </summary>
     [HttpPut("articles/{articleId}")]
-    [Authorize(Roles = "Admin,SuperAdmin")]
+    [Authorize(Roles = "Admin,SuperAdmin,Owner,Member")]
     [ProducesResponseType(typeof(KnowledgeArticleResponse), 200)]
     [ProducesResponseType(404)]
     public async Task<IActionResult> UpdateArticle(
@@ -126,7 +126,7 @@ public class KnowledgeBaseController : ControllerBase
     /// Delete a knowledge base article (soft delete, Admin only)
     /// </summary>
     [HttpDelete("articles/{articleId}")]
-    [Authorize(Roles = "Admin,SuperAdmin")]
+    [Authorize(Roles = "Admin,SuperAdmin,Owner,Member")]
     [ProducesResponseType(204)]
     [ProducesResponseType(404)]
     public async Task<IActionResult> DeleteArticle(

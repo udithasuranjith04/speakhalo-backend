@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using CustomerReminderPreferences = SpeakHalo.Application.BackgroundJobs.CustomerReminderPreferences;
 using SpeakHalo.Application.DTOs;
 using SpeakHalo.Application.Interfaces;
 using SpeakHalo.Domain.Entities;
@@ -137,7 +139,79 @@ public class UsersController : ControllerBase
 
         return Ok(new { enabled = profile.CallerRecognitionEnabled });
     }
+
+    [HttpGet("reminder-settings")]
+    public async Task<IActionResult> GetReminderSettings(CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var profiles = await _unitOfWork.Repository<UserProfile>()
+            .FindAsync(p => p.UserId == userId, cancellationToken);
+        var profile = profiles.FirstOrDefault();
+
+        if (profile?.NotificationSettings != null)
+        {
+            try
+            {
+                var settings = JsonSerializer.Deserialize<CustomerReminderPreferences>(profile.NotificationSettings,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (settings != null)
+                    return Ok(settings);
+            }
+            catch
+            {
+                // Fall through to defaults
+            }
+        }
+
+        return Ok(CustomerReminderPreferences.Default);
+    }
+
+    [HttpPut("reminder-settings")]
+    public async Task<IActionResult> UpdateReminderSettings(
+        [FromBody] ReminderSettingsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var profiles = await _unitOfWork.Repository<UserProfile>()
+            .FindAsync(p => p.UserId == userId, cancellationToken);
+        var profile = profiles.FirstOrDefault();
+
+        if (profile == null)
+            return NotFound(new { error = "User profile not found" });
+
+        // Validate channels
+        var validChannels = new HashSet<string> { "sms", "whatsapp" };
+        var channels = request.ReminderChannels?
+            .Where(c => validChannels.Contains(c.ToLowerInvariant()))
+            .Select(c => c.ToLowerInvariant())
+            .Distinct()
+            .ToList() ?? new List<string> { "sms" };
+
+        var settings = new CustomerReminderPreferences
+        {
+            Reminder24hEnabled = request.Reminder24hEnabled,
+            Reminder2hEnabled = request.Reminder2hEnabled,
+            ReminderChannels = channels,
+            CustomMessage24h = request.CustomMessage24h?.Trim(),
+            CustomMessage2h = request.CustomMessage2h?.Trim()
+        };
+
+        profile.NotificationSettings = JsonSerializer.Serialize(settings,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        profile.UpdatedAt = DateTime.UtcNow;
+        _unitOfWork.Repository<UserProfile>().Update(profile);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Ok(settings);
+    }
 }
 
 public record UpdatePasswordRequest(string CurrentPassword, string NewPassword);
 public record CallerRecognitionRequest(bool Enabled);
+public record ReminderSettingsRequest(
+    bool Reminder24hEnabled,
+    bool Reminder2hEnabled,
+    List<string>? ReminderChannels,
+    string? CustomMessage24h,
+    string? CustomMessage2h
+);

@@ -88,6 +88,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
     public DbSet<TeamInvite> TeamInvites => Set<TeamInvite>();
 
+    // Industry Knowledge Templates
+    public DbSet<IndustryKnowledgeTemplate> IndustryKnowledgeTemplates => Set<IndustryKnowledgeTemplate>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -1070,6 +1073,19 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.Category);
             entity.HasIndex(e => e.Intent);
             entity.HasIndex(e => e.IncludeInTraining);
+        });
+
+        // IndustryKnowledgeTemplate configuration
+        modelBuilder.Entity<IndustryKnowledgeTemplate>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Industry).HasConversion<string>().IsRequired();
+            entity.Property(e => e.Category).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Title).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.Content).IsRequired();
+            entity.Property(e => e.LastEditedBy).HasMaxLength(255);
+            entity.HasIndex(e => new { e.Industry, e.IsActive, e.SortOrder });
+            entity.HasIndex(e => new { e.Industry, e.Category });
         });
 
     }

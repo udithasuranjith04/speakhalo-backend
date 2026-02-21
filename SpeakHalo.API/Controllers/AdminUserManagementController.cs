@@ -7,6 +7,7 @@ using SpeakHalo.Application.Interfaces;
 using SpeakHalo.Domain.Entities;
 using SpeakHalo.Domain.Enums;
 using SpeakHalo.Domain.Interfaces.Repositories;
+using Microsoft.Extensions.Caching.Distributed;
 using SpeakHalo.Shared.Constants;
 using System.Security.Claims;
 using System.Text.Json;
@@ -26,6 +27,7 @@ public class AdminUserManagementController : ControllerBase
     private readonly ILogger<AdminUserManagementController> _logger;
     private readonly IEmailService _emailService;
     private readonly IAuditLogService _auditLogService;
+    private readonly IDistributedCache _cache;
     private readonly string _frontendBaseUrl;
     private readonly string _supportEmail;
 
@@ -46,12 +48,14 @@ public class AdminUserManagementController : ControllerBase
         ILogger<AdminUserManagementController> logger,
         IEmailService emailService,
         IAuditLogService auditLogService,
+        IDistributedCache cache,
         IConfiguration configuration)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
         _emailService = emailService;
         _auditLogService = auditLogService;
+        _cache = cache;
         _frontendBaseUrl = configuration["Frontend:BaseUrl"]?.TrimEnd('/') ?? "https://app.speakhalo.com";
         _supportEmail = configuration["SendGrid:SupportEmail"] ?? "support@speakhalo.com";
     }
@@ -129,31 +133,21 @@ public class AdminUserManagementController : ControllerBase
         if (user == null || user.IsDeleted)
             return NotFound(new { error = "User not found" });
 
-        // Load all related entities in parallel (avoids sequential N queries)
-        var subsTask = _unitOfWork.Repository<UserSubscription>()
-            .FindAsync(s => s.UserId == userId, cancellationToken);
-        var profilesTask = _unitOfWork.Repository<UserProfile>()
-            .FindAsync(p => p.UserId == userId, cancellationToken);
-        var authsTask = _unitOfWork.Repository<UserAuth>()
-            .FindAsync(a => a.UserId == userId, cancellationToken);
-        var adminsTask = _unitOfWork.Repository<UserAdmin>()
-            .FindAsync(a => a.UserId == userId, cancellationToken);
-        var voiceAgentsTask = _unitOfWork.Repository<VoiceAgent>()
+        // Load all related entities sequentially (DbContext is not thread-safe)
+        var sub = (await _unitOfWork.Repository<UserSubscription>()
+            .FindAsync(s => s.UserId == userId, cancellationToken)).FirstOrDefault();
+        var profile = (await _unitOfWork.Repository<UserProfile>()
+            .FindAsync(p => p.UserId == userId, cancellationToken)).FirstOrDefault();
+        var auth = (await _unitOfWork.Repository<UserAuth>()
+            .FindAsync(a => a.UserId == userId, cancellationToken)).FirstOrDefault();
+        var admin = (await _unitOfWork.Repository<UserAdmin>()
+            .FindAsync(a => a.UserId == userId, cancellationToken)).FirstOrDefault();
+        var voiceAgents = await _unitOfWork.Repository<VoiceAgent>()
             .FindAsync(v => v.UserId == userId && !v.IsDeleted, cancellationToken);
-        var agentProfilesTask = _unitOfWork.Repository<AgentProfile>()
-            .FindAsync(a => a.UserId == userId && !a.IsDeleted, cancellationToken);
-        var phoneNumbersTask = _unitOfWork.PhoneNumbers
+        var agentProfile = (await _unitOfWork.Repository<AgentProfile>()
+            .FindAsync(a => a.UserId == userId && !a.IsDeleted, cancellationToken)).FirstOrDefault();
+        var phoneNumbers = await _unitOfWork.PhoneNumbers
             .FindAsync(p => p.UserId == userId && !p.IsDeleted, cancellationToken);
-
-        await Task.WhenAll(subsTask, profilesTask, authsTask, adminsTask, voiceAgentsTask, agentProfilesTask, phoneNumbersTask);
-
-        var sub = (await subsTask).FirstOrDefault();
-        var profile = (await profilesTask).FirstOrDefault();
-        var auth = (await authsTask).FirstOrDefault();
-        var admin = (await adminsTask).FirstOrDefault();
-        var voiceAgents = await voiceAgentsTask;
-        var agentProfile = (await agentProfilesTask).FirstOrDefault();
-        var phoneNumbers = await phoneNumbersTask;
 
         // Parse AI agent config if present
         object? aiAgentConfig = null;
@@ -571,7 +565,16 @@ public class AdminUserManagementController : ControllerBase
         var profile = profiles.FirstOrDefault();
 
         if (profile == null)
-            return NotFound(new { error = "User profile not found" });
+        {
+            profile = new UserProfile
+            {
+                UserId = userId,
+                BusinessName = user.BusinessName ?? "",
+                Industry = user.Industry
+            };
+            await _unitOfWork.Repository<UserProfile>().AddAsync(profile, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
 
         var oldValues = new
         {
@@ -702,6 +705,9 @@ public class AdminUserManagementController : ControllerBase
         _unitOfWork.Repository<UserSubscription>().Update(sub);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        // Invalidate cached subscription state so RequireFeature picks up changes immediately
+        try { await _cache.RemoveAsync($"user_sub:{userId}", cancellationToken); } catch { /* best-effort */ }
+
         _logger.LogInformation("Admin {AdminId} updated features for user {UserId}", adminId, userId);
 
         await _auditLogService.LogActionAsync(
@@ -755,7 +761,16 @@ public class AdminUserManagementController : ControllerBase
         var profile = profiles.FirstOrDefault();
 
         if (profile == null)
-            return NotFound(new { error = "User profile not found" });
+        {
+            profile = new UserProfile
+            {
+                UserId = userId,
+                BusinessName = user.BusinessName ?? "",
+                Industry = user.Industry
+            };
+            await _unitOfWork.Repository<UserProfile>().AddAsync(profile, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
 
         var oldConfig = profile.AiAgentConfig;
 

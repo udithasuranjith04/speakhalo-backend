@@ -45,17 +45,20 @@ public class KnowledgeBaseService : IKnowledgeBaseService
 {
     private readonly IKnowledgeBaseArticleRepository _articleRepository;
     private readonly ICommonIssueRepository _issueRepository;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly IAiChatService _aiChatService;
     private readonly ILogger<KnowledgeBaseService> _logger;
 
     public KnowledgeBaseService(
         IKnowledgeBaseArticleRepository articleRepository,
         ICommonIssueRepository issueRepository,
+        IUnitOfWork unitOfWork,
         IAiChatService aiChatService,
         ILogger<KnowledgeBaseService> logger)
     {
         _articleRepository = articleRepository;
         _issueRepository = issueRepository;
+        _unitOfWork = unitOfWork;
         _aiChatService = aiChatService;
         _logger = logger;
     }
@@ -66,11 +69,15 @@ public class KnowledgeBaseService : IKnowledgeBaseService
     {
         try
         {
+            var industry = ServiceType.HomeServices;
+            if (!string.IsNullOrWhiteSpace(request.Industry))
+                Enum.TryParse<ServiceType>(request.Industry, true, out industry);
+
             var article = new KnowledgeBaseArticle
             {
                 Title = request.Title,
                 Content = request.Content,
-                Industry = request.Industry,
+                Industry = industry,
                 Category = request.Category,
                 Tags = request.Tags,
                 EquipmentType = request.EquipmentType,
@@ -95,6 +102,7 @@ public class KnowledgeBaseService : IKnowledgeBaseService
             };
 
             await _articleRepository.AddAsync(article, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Created knowledge base article: {Title} for {Industry}", article.Title, article.Industry);
 
@@ -128,6 +136,7 @@ public class KnowledgeBaseService : IKnowledgeBaseService
             if (request.IsActive.HasValue) article.IsActive = request.IsActive.Value;
 
             _articleRepository.Update(article);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result<KnowledgeBaseArticle>.Success(article);
         }
@@ -153,6 +162,7 @@ public class KnowledgeBaseService : IKnowledgeBaseService
             // Soft delete
             article.IsActive = false;
             _articleRepository.Update(article);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result<bool>.Success(true);
         }

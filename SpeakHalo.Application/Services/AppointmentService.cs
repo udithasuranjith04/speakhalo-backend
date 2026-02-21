@@ -33,7 +33,7 @@ public class AppointmentService : IAppointmentService
                 CustomerId = request.CustomerId,
                 ScheduledAt = request.ScheduledAt,
                 DurationMinutes = request.DurationMinutes,
-                ServiceType = request.ServiceType ?? default,
+                ServiceType = Enum.TryParse<ServiceType>(request.ServiceType, true, out var st) ? st : default,
                 Location = request.Location,
                 Notes = request.Notes,
                 Status = AppointmentStatus.Scheduled
@@ -74,19 +74,21 @@ public class AppointmentService : IAppointmentService
         try
         {
             var appointments = await _unitOfWork.Appointments.FindAsync(a => a.UserId == userId, cancellationToken);
-            var orderedAppointments = appointments.OrderByDescending(a => a.ScheduledAt);
+            var ordered = appointments.OrderByDescending(a => a.ScheduledAt).ToList();
 
-            var paginatedAppointments = await orderedAppointments
-                .AsQueryable()
-                .ToPaginatedListAsync(pageNumber, pageSize, cancellationToken);
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1) pageSize = 10;
 
-            var responses = paginatedAppointments.Items.Select(MapToResponse).ToList();
+            var totalCount = ordered.Count;
+            var items = ordered.Skip((pageNumber - 1) * pageSize).Take(pageSize).ToList();
+
+            var responses = items.Select(MapToResponse).ToList();
 
             var result = new PaginatedList<AppointmentResponse>(
                 responses,
-                paginatedAppointments.TotalCount,
-                paginatedAppointments.CurrentPage,
-                paginatedAppointments.PageSize
+                totalCount,
+                pageNumber,
+                pageSize
             );
 
             return Result<PaginatedList<AppointmentResponse>>.Success(result);
@@ -120,8 +122,8 @@ public class AppointmentService : IAppointmentService
                     appointment.CompletedAt = DateTime.UtcNow;
             }
 
-            if (request.ServiceType.HasValue)
-                appointment.ServiceType = request.ServiceType.Value;
+            if (request.ServiceType != null && Enum.TryParse<ServiceType>(request.ServiceType, true, out var serviceType))
+                appointment.ServiceType = serviceType;
 
             if (request.Location != null)
                 appointment.Location = request.Location;
@@ -257,7 +259,7 @@ public class AppointmentService : IAppointmentService
             ScheduledAt = appointment.ScheduledAt,
             DurationMinutes = appointment.DurationMinutes,
             Status = appointment.Status,
-            ServiceType = appointment.ServiceType,
+            ServiceType = appointment.ServiceType == default ? null : appointment.ServiceType.ToString(),
             Location = appointment.Location,
             Notes = appointment.Notes,
             CompletedAt = appointment.CompletedAt,

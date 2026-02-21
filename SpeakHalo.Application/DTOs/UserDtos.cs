@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using SpeakHalo.Domain.Enums;
 
 namespace SpeakHalo.Application.DTOs;
@@ -20,6 +21,7 @@ public record UserResponse
     public required string Email { get; init; }
     public required string Name { get; init; }
     public required string BusinessName { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public UserRole Role { get; init; }
     public string? Industry { get; init; }
     public string? Phone { get; init; }

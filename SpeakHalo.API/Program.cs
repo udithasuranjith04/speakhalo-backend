@@ -151,6 +151,11 @@ builder.Services.AddScoped<IInvoiceService, SpeakHalo.Application.Services.Invoi
 builder.Services.AddScoped<ITeamService, SpeakHalo.Application.Services.TeamService>();
 builder.Services.AddScoped<ICallerRecognitionService, SpeakHalo.Application.Services.CallerRecognitionService>();
 
+builder.Services.AddHttpClient<IGeocodingService, NominatimGeocodingService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
 builder.Services.AddHttpClient<IAiChatService, GeminiChatService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
@@ -240,6 +245,19 @@ builder.Services.AddAuthentication(options =>
         ValidateLifetime = true,
         ClockSkew = TimeSpan.FromSeconds(5)
     };
+    options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
 builder.Services.AddAuthorization();
@@ -263,6 +281,9 @@ builder.Services.AddApiVersioning(options =>
 builder.Services.AddControllers(options =>
 {
     options.MaxModelValidationErrors = 50;
+}).AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
 });
 
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
@@ -350,9 +371,11 @@ builder.Services.AddCors(options =>
     {
         options.AddDefaultPolicy(policy =>
         {
-            policy.AllowAnyOrigin()
+            policy.WithOrigins(allowedOrigins)
                   .AllowAnyMethod()
-                  .AllowAnyHeader();
+                  .AllowAnyHeader()
+                  .AllowCredentials()
+                  .WithExposedHeaders("Content-Disposition", "X-Total-Count");
         });
     }
     else
@@ -431,7 +454,10 @@ app.UseMiddleware<ApiKeyAuthenticationMiddleware>();
 
 app.UseSerilogRequestLogging();
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -594,7 +620,7 @@ app.MapGet("/", () => new
 RecurringJob.AddOrUpdate<SpeakHalo.Application.BackgroundJobs.AppointmentReminderJob>(
     "appointment-reminders",
     job => job.SendUpcomingRemindersAsync(CancellationToken.None),
-    Cron.Hourly);
+    "*/15 * * * *");
 
 RecurringJob.AddOrUpdate<SpeakHalo.Application.BackgroundJobs.DataCleanupJob>(
     "data-cleanup",
@@ -665,6 +691,18 @@ if (app.Environment.IsDevelopment() || args.Contains("--seed"))
         catch (Exception ex)
         {
             Log.Warning(ex, "Industry data may already be seeded or seeding failed");
+        }
+
+        try
+        {
+            Log.Information("🌱 Seeding industry knowledge templates...");
+            var knowledgeContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await SpeakHalo.Infrastructure.Data.IndustryKnowledgeTemplateSeedData.SeedAsync(knowledgeContext);
+            Log.Information("✅ Industry knowledge templates seeded successfully");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Knowledge templates may already be seeded or seeding failed");
         }
     }
 }

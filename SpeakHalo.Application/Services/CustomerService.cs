@@ -12,11 +12,13 @@ namespace SpeakHalo.Application.Services;
 public class CustomerService : ICustomerService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IGeocodingService _geocodingService;
     private readonly ILogger<CustomerService> _logger;
 
-    public CustomerService(IUnitOfWork unitOfWork, ILogger<CustomerService> logger)
+    public CustomerService(IUnitOfWork unitOfWork, IGeocodingService geocodingService, ILogger<CustomerService> logger)
     {
         _unitOfWork = unitOfWork;
+        _geocodingService = geocodingService;
         _logger = logger;
     }
 
@@ -30,7 +32,11 @@ public class CustomerService : ICustomerService
             )).FirstOrDefault();
 
             if (existingCustomer != null)
-                return Result<CustomerResponse>.Failure(ErrorMessages.AlreadyExists("Customer"));
+            {
+                var existingName = !string.IsNullOrWhiteSpace(existingCustomer.Name) ? existingCustomer.Name : "Unknown";
+                return Result<CustomerResponse>.Failure(
+                    $"A customer with phone number {request.Phone} already exists ({existingName})");
+            }
 
             var customer = new Customer
             {
@@ -39,9 +45,28 @@ public class CustomerService : ICustomerService
                 Name = request.Name ?? string.Empty,
                 Email = request.Email,
                 Address = request.Address,
+                City = request.City,
+                State = request.State,
+                ZipCode = request.ZipCode,
                 Notes = request.Notes,
                 LeadStatus = request.LeadStatus
             };
+
+            var hasAddress = !string.IsNullOrWhiteSpace(request.Address) ||
+                             !string.IsNullOrWhiteSpace(request.City) ||
+                             !string.IsNullOrWhiteSpace(request.State) ||
+                             !string.IsNullOrWhiteSpace(request.ZipCode);
+
+            if (hasAddress)
+            {
+                var coords = await _geocodingService.GeocodeAddressAsync(
+                    request.Address, request.City, request.State, request.ZipCode, cancellationToken);
+                if (coords.HasValue)
+                {
+                    customer.Latitude = coords.Value.Latitude;
+                    customer.Longitude = coords.Value.Longitude;
+                }
+            }
 
             await _unitOfWork.Customers.AddAsync(customer, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -96,19 +121,23 @@ public class CustomerService : ICustomerService
         try
         {
             var customers = await _unitOfWork.Customers.FindAsync(c => c.UserId == userId, cancellationToken);
-            var orderedCustomers = customers.OrderByDescending(c => c.CreatedAt);
+            var orderedCustomers = customers.OrderByDescending(c => c.CreatedAt).ToList();
 
-            var paginatedCustomers = await orderedCustomers
-                .AsQueryable()
-                .ToPaginatedListAsync(pageNumber, pageSize, cancellationToken);
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1) pageSize = 10;
 
-            var responses = paginatedCustomers.Items.Select(MapToResponse).ToList();
+            var totalCount = orderedCustomers.Count;
+            var responses = orderedCustomers
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .Select(MapToResponse)
+                .ToList();
 
             var result = new PaginatedList<CustomerResponse>(
                 responses,
-                paginatedCustomers.TotalCount,
-                paginatedCustomers.CurrentPage,
-                paginatedCustomers.PageSize
+                totalCount,
+                pageNumber,
+                pageSize
             );
 
             return Result<PaginatedList<CustomerResponse>>.Success(result);
@@ -132,14 +161,49 @@ public class CustomerService : ICustomerService
             if (request.Name != null)
                 customer.Name = request.Name;
 
-            if (request.Phone != null)
+            if (request.Phone != null && request.Phone != customer.Phone)
+            {
+                var duplicate = (await _unitOfWork.Customers.FindAsync(
+                    c => c.UserId == customer.UserId && c.Phone == request.Phone && c.Id != customerId,
+                    cancellationToken
+                )).FirstOrDefault();
+                if (duplicate != null)
+                {
+                    var dupName = !string.IsNullOrWhiteSpace(duplicate.Name) ? duplicate.Name : "Unknown";
+                    return Result<CustomerResponse>.Failure(
+                        $"Phone number {request.Phone} is already assigned to another customer ({dupName})");
+                }
                 customer.Phone = request.Phone;
+            }
 
             if (request.Email != null)
                 customer.Email = request.Email;
 
-            if (request.Address != null)
+            var addressChanged = false;
+
+            if (request.Address != null && request.Address != customer.Address)
+            {
                 customer.Address = request.Address;
+                addressChanged = true;
+            }
+
+            if (request.City != null && request.City != customer.City)
+            {
+                customer.City = request.City;
+                addressChanged = true;
+            }
+
+            if (request.State != null && request.State != customer.State)
+            {
+                customer.State = request.State;
+                addressChanged = true;
+            }
+
+            if (request.ZipCode != null && request.ZipCode != customer.ZipCode)
+            {
+                customer.ZipCode = request.ZipCode;
+                addressChanged = true;
+            }
 
             if (request.Notes != null)
                 customer.Notes = request.Notes;
@@ -149,6 +213,17 @@ public class CustomerService : ICustomerService
 
             if (request.TotalRevenue.HasValue)
                 customer.TotalSpend = request.TotalRevenue.Value;
+
+            if (addressChanged)
+            {
+                var coords = await _geocodingService.GeocodeAddressAsync(
+                    customer.Address, customer.City, customer.State, customer.ZipCode, cancellationToken);
+                if (coords.HasValue)
+                {
+                    customer.Latitude = coords.Value.Latitude;
+                    customer.Longitude = coords.Value.Longitude;
+                }
+            }
 
             _unitOfWork.Customers.Update(customer);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -210,6 +285,79 @@ public class CustomerService : ICustomerService
         }
     }
 
+    public async Task<Result<List<CustomerLocationDto>>> GetCustomerLocationsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var customers = await _unitOfWork.Customers.FindAsync(
+                c => c.UserId == userId && c.Latitude != null && c.Longitude != null,
+                cancellationToken
+            );
+
+            var locations = customers.Select(c => new CustomerLocationDto
+            {
+                Id = c.Id,
+                Name = c.Name,
+                Phone = c.Phone,
+                Latitude = c.Latitude!.Value,
+                Longitude = c.Longitude!.Value,
+                Address = string.Join(", ", new[] { c.Address, c.City, c.State, c.ZipCode }.Where(s => !string.IsNullOrWhiteSpace(s))),
+                LeadStatus = c.LeadStatus,
+                TotalAppointments = c.Appointments.Count,
+                TotalRevenue = c.TotalSpend,
+                LastContactedAt = c.LastContactedAt
+            }).ToList();
+
+            return Result<List<CustomerLocationDto>>.Success(locations);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get customer locations for user {UserId}", userId);
+            return Result<List<CustomerLocationDto>>.Failure($"Failed to get customer locations: {ex.Message}");
+        }
+    }
+
+    public async Task<Result<int>> GeocodeAllCustomersAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var customers = await _unitOfWork.Customers.FindAsync(
+                c => c.UserId == userId &&
+                     c.Latitude == null &&
+                     (c.Address != null || c.City != null || c.State != null || c.ZipCode != null),
+                cancellationToken
+            );
+
+            var geocodedCount = 0;
+            foreach (var customer in customers)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+
+                var coords = await _geocodingService.GeocodeAddressAsync(
+                    customer.Address, customer.City, customer.State, customer.ZipCode, cancellationToken);
+
+                if (coords.HasValue)
+                {
+                    customer.Latitude = coords.Value.Latitude;
+                    customer.Longitude = coords.Value.Longitude;
+                    _unitOfWork.Customers.Update(customer);
+                    geocodedCount++;
+                }
+            }
+
+            if (geocodedCount > 0)
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation("Geocoded {Count} customers for user {UserId}", geocodedCount, userId);
+            return Result<int>.Success(geocodedCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to geocode customers for user {UserId}", userId);
+            return Result<int>.Failure($"Failed to geocode customers: {ex.Message}");
+        }
+    }
+
     private static CustomerResponse MapToResponse(Customer customer)
     {
         return new CustomerResponse
@@ -220,6 +368,11 @@ public class CustomerService : ICustomerService
             Name = customer.Name,
             Email = customer.Email,
             Address = customer.Address,
+            City = customer.City,
+            State = customer.State,
+            ZipCode = customer.ZipCode,
+            Latitude = customer.Latitude,
+            Longitude = customer.Longitude,
             Notes = customer.Notes,
             LeadStatus = customer.LeadStatus,
             TotalCalls = 0,

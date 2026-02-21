@@ -742,7 +742,7 @@ public class GeminiLiveVoiceService : IGeminiVoiceService
             CustomerId = customerId,
             ScheduledAt = scheduledAt,
             DurationMinutes = 60,
-            ServiceType = serviceType ?? ServiceType.Cleaning,
+            ServiceType = serviceType?.ToString() ?? "Cleaning",
             Location = customerAddress,
             Notes = description
         };
@@ -1409,22 +1409,23 @@ public class GeminiLiveVoiceService : IGeminiVoiceService
             ? agent.Name
             : "Sarah";
 
-        // Phase 2: Run caller recognition and knowledge base loading in parallel
+        // Phase 2: Run caller recognition, knowledge base, and expertise loading in parallel
         // These are the heaviest operations and are completely independent
         var callerRecognitionTask = !string.IsNullOrEmpty(callerPhone)
             ? _callerRecognition.RecognizeCallerAsync(agent.UserId, callerPhone, "voice", ct)
             : Task.FromResult<RecognizedCaller?>(null);
         var knowledgeTask = LoadBusinessKnowledgeAsync(industryEnum, ct);
+        var expertiseTask = enableTroubleshooting
+            ? LoadIndustryExpertiseAsync(industryEnum, ct)
+            : Task.FromResult("");
 
-        await Task.WhenAll(callerRecognitionTask, knowledgeTask);
+        await Task.WhenAll(callerRecognitionTask, knowledgeTask, expertiseTask);
 
         var recognized = await callerRecognitionTask;
         _recognizedCaller = recognized; // Store for tool handlers
         var callerContext = recognized != null ? BuildCallerContextBlock(recognized) : "";
         var businessKnowledge = await knowledgeTask;
-
-        // Load deep industry expertise only if troubleshooting is enabled (in-memory, instant)
-        var expertiseBlock = enableTroubleshooting ? IndustryExpertise.GetExpertise(industryEnum) : "";
+        var expertiseBlock = await expertiseTask;
 
         // Time-of-day awareness
         var hour = DateTime.UtcNow.Hour; // Will be approximate — better with user timezone
@@ -1648,6 +1649,45 @@ IDENTITY (never break character):
         public string Content { get; set; } = "";
         public CachedKnowledgeBase() { }
         public CachedKnowledgeBase(string content) => Content = content;
+    }
+
+    private async Task<string> LoadIndustryExpertiseAsync(ServiceType industry, CancellationToken ct)
+    {
+        try
+        {
+            var cacheKey = $"voice:expertise:{(int)industry}";
+            var cached = await _cacheService.GetAsync<CachedKnowledgeBase>(cacheKey, ct);
+            if (cached != null) return cached.Content;
+
+            var templates = await _unitOfWork.Repository<IndustryKnowledgeTemplate>()
+                .FindAsync(t => t.Industry == industry && t.IsActive && !t.IsDeleted, ct);
+
+            var ordered = templates.OrderBy(t => t.SortOrder).ThenBy(t => t.Category).ToList();
+            if (ordered.Count == 0) return "";
+
+            var sb = new StringBuilder();
+            string? currentCategory = null;
+            foreach (var t in ordered)
+            {
+                if (t.Category != currentCategory)
+                {
+                    currentCategory = t.Category;
+                    sb.AppendLine($"\n═══════════════════════════════════════════");
+                    sb.AppendLine(currentCategory.ToUpperInvariant());
+                    sb.AppendLine("═══════════════════════════════════════════");
+                }
+                sb.AppendLine(t.Content);
+            }
+
+            var result = sb.ToString();
+            await _cacheService.SetAsync(cacheKey, new CachedKnowledgeBase(result), TimeSpan.FromMinutes(10), ct);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load industry expertise for {Industry}", industry);
+            return "";
+        }
     }
 
     /// <summary>

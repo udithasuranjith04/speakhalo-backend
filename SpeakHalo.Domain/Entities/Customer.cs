@@ -13,6 +13,9 @@ public class Customer : BaseEntity
     public string? State { get; set; }
     public string? ZipCode { get; set; }
 
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+
     public LeadStatus LeadStatus { get; set; } = LeadStatus.New;
     public int LeadScore { get; set; } = 0;
     public string LeadQualification { get; set; } = "cold";

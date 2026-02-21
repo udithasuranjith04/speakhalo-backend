@@ -13,4 +13,6 @@ public interface ICustomerService
     Task<Result<CustomerResponse>> UpdateCustomerAsync(string customerId, UpdateCustomerRequest request, CancellationToken cancellationToken = default);
     Task<Result<bool>> DeleteCustomerAsync(string customerId, CancellationToken cancellationToken = default);
     Task<Result<List<CustomerResponse>>> SearchCustomersAsync(string userId, string searchTerm, CancellationToken cancellationToken = default);
+    Task<Result<List<CustomerLocationDto>>> GetCustomerLocationsAsync(string userId, CancellationToken cancellationToken = default);
+    Task<Result<int>> GeocodeAllCustomersAsync(string userId, CancellationToken cancellationToken = default);
 }

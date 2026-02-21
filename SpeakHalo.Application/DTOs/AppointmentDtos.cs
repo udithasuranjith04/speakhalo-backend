@@ -4,11 +4,11 @@ namespace SpeakHalo.Application.DTOs;
 
 public record CreateAppointmentRequest
 {
-    public required string UserId { get; init; }
+    public string UserId { get; init; } = string.Empty;
     public required string CustomerId { get; init; }
     public required DateTime ScheduledAt { get; init; }
     public int DurationMinutes { get; init; } = 60;
-    public ServiceType? ServiceType { get; init; }
+    public string? ServiceType { get; init; }
     public string? Location { get; init; }
     public string? Notes { get; init; }
 }
@@ -18,7 +18,7 @@ public record UpdateAppointmentRequest
     public DateTime? ScheduledAt { get; init; }
     public int? DurationMinutes { get; init; }
     public AppointmentStatus? Status { get; init; }
-    public ServiceType? ServiceType { get; init; }
+    public string? ServiceType { get; init; }
     public string? Location { get; init; }
     public string? Notes { get; init; }
     public string? CompletionNotes { get; init; }
@@ -32,7 +32,7 @@ public record AppointmentResponse
     public required DateTime ScheduledAt { get; init; }
     public int DurationMinutes { get; init; }
     public AppointmentStatus Status { get; init; }
-    public ServiceType? ServiceType { get; init; }
+    public string? ServiceType { get; init; }
     public string? Location { get; init; }
     public string? Notes { get; init; }
     public DateTime? CompletedAt { get; init; }

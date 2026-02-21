@@ -21,10 +21,10 @@ public class CreateAppointmentRequestValidator : AbstractValidator<CreateAppoint
             .GreaterThan(0).WithMessage("Duration must be greater than 0")
             .LessThanOrEqualTo(480).WithMessage("Duration must not exceed 8 hours");
 
-        When(x => x.ServiceType.HasValue, () =>
+        When(x => x.ServiceType != null, () =>
         {
             RuleFor(x => x.ServiceType)
-                .IsInEnum().WithMessage("Invalid service type");
+                .MaximumLength(200).WithMessage("Service type must not exceed 200 characters");
         });
 
         When(x => x.Location != null, () =>
@@ -64,10 +64,10 @@ public class UpdateAppointmentRequestValidator : AbstractValidator<UpdateAppoint
                 .IsInEnum().WithMessage("Invalid appointment status");
         });
 
-        When(x => x.ServiceType.HasValue, () =>
+        When(x => x.ServiceType != null, () =>
         {
             RuleFor(x => x.ServiceType)
-                .IsInEnum().WithMessage("Invalid service type");
+                .MaximumLength(200).WithMessage("Service type must not exceed 200 characters");
         });
 
         When(x => x.Location != null, () =>

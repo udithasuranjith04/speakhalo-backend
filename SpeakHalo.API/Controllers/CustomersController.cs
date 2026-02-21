@@ -139,6 +139,36 @@ public class CustomersController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("user/locations")]
+    public async Task<IActionResult> GetCustomerLocations(CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        var result = await _customerService.GetCustomerLocationsAsync(userId, cancellationToken);
+
+        if (!result.IsSuccess)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    [HttpPost("user/geocode-all")]
+    public async Task<IActionResult> GeocodeAllCustomers(CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        var result = await _customerService.GeocodeAllCustomersAsync(userId, cancellationToken);
+
+        if (!result.IsSuccess)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
     [HttpGet("search")]
     public async Task<IActionResult> SearchCustomers([FromQuery] string searchTerm, CancellationToken cancellationToken)
     {

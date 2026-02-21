@@ -107,6 +107,13 @@ public class AppointmentsController : ControllerBase
     [HttpGet("user/date-range")]
     public async Task<IActionResult> GetAppointmentsByDateRange([FromQuery] DateTime startDate, [FromQuery] DateTime endDate, CancellationToken cancellationToken)
     {
+        // Npgsql 6+ requires DateTime with DateTimeKind.Utc for timestamptz columns.
+        // Query params parse as DateTimeKind.Unspecified, so convert to UTC.
+        if (startDate.Kind != DateTimeKind.Utc)
+            startDate = DateTime.SpecifyKind(startDate, DateTimeKind.Utc);
+        if (endDate.Kind != DateTimeKind.Utc)
+            endDate = DateTime.SpecifyKind(endDate, DateTimeKind.Utc);
+
         if (startDate > endDate)
             return BadRequest(new { error = "Start date must be before end date" });
 
