@@ -16,4 +16,5 @@ public interface IAuthService
     Task<Result<TotpSetupResponse>> SetupTotpAsync(string userId, CancellationToken cancellationToken = default);
     Task<Result> VerifyTotpAsync(string userId, string code, CancellationToken cancellationToken = default);
     Task<Result> DisableTotpAsync(string userId, CancellationToken cancellationToken = default);
+    Task<Result<LoginResponse>> VerifyLoginTotpAsync(string twoFactorToken, string code, string? ipAddress = null, CancellationToken cancellationToken = default);
 }

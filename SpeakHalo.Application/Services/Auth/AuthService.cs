@@ -154,6 +154,23 @@ public class AuthService : IAuthService
             });
         }
 
+        // 2FA required — issue a short-lived 2FA token instead of access tokens
+        if (userAuth != null && userAuth.TotpEnabled)
+        {
+            var twoFactorToken = _jwtTokenGenerator.GenerateTwoFactorToken(user.Id);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("2FA required for user {UserId}, issued two-factor token", user.Id);
+
+            return Result<LoginResponse>.Success(new LoginResponse
+            {
+                RequiresTwoFactor = true,
+                TwoFactorToken = twoFactorToken,
+                Message = "Two-factor authentication required.",
+                User = new UserDto { Id = user.Id }
+            });
+        }
+
         // Normal login — issue access + refresh tokens
         var accessToken = _jwtTokenGenerator.GenerateAccessToken(user.Id, user.Email, user.Role.ToString());
         var refreshToken = _jwtTokenGenerator.GenerateRefreshToken();
@@ -630,6 +647,91 @@ public class AuthService : IAuthService
         _logger.LogInformation("TOTP disabled for user {UserId}", userId);
 
         return Result.Success("Two-factor authentication has been disabled.");
+    }
+
+    public async Task<Result<LoginResponse>> VerifyLoginTotpAsync(string twoFactorToken, string code, string? ipAddress = null, CancellationToken cancellationToken = default)
+    {
+        var userId = _jwtTokenGenerator.ValidateTwoFactorToken(twoFactorToken);
+        if (string.IsNullOrEmpty(userId))
+            return Result<LoginResponse>.Failure("Invalid or expired two-factor token. Please log in again.");
+
+        var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        if (user == null || !user.IsActive)
+            return Result<LoginResponse>.Failure("Invalid or expired two-factor token. Please log in again.");
+
+        var userAuth = await GetUserAuthAsync(userId, cancellationToken);
+        if (userAuth == null || !userAuth.TotpEnabled || string.IsNullOrEmpty(userAuth.TotpSecret))
+            return Result<LoginResponse>.Failure("Two-factor authentication is not configured.");
+
+        // Check 2FA lockout
+        if (userAuth.TwoFactorLockoutEndTime.HasValue && userAuth.TwoFactorLockoutEndTime.Value > DateTime.UtcNow)
+        {
+            var remaining = (int)Math.Ceiling((userAuth.TwoFactorLockoutEndTime.Value - DateTime.UtcNow).TotalMinutes);
+            return Result<LoginResponse>.Failure($"Too many failed attempts. Try again in {remaining} minute(s).");
+        }
+
+        var secretBytes = OtpNet.Base32Encoding.ToBytes(userAuth.TotpSecret);
+        var totp = new OtpNet.Totp(secretBytes, step: 30, totpSize: 6);
+        var isValid = totp.VerifyTotp(code, out _, new OtpNet.VerificationWindow(previous: 1, future: 1));
+
+        // Check backup codes if TOTP code didn't match
+        if (!isValid && !string.IsNullOrEmpty(userAuth.TotpBackupCodes))
+        {
+            var backupCodes = System.Text.Json.JsonSerializer.Deserialize<List<string>>(userAuth.TotpBackupCodes) ?? [];
+            if (backupCodes.Contains(code))
+            {
+                backupCodes.Remove(code);
+                userAuth.TotpBackupCodes = System.Text.Json.JsonSerializer.Serialize(backupCodes);
+                isValid = true;
+            }
+        }
+
+        if (!isValid)
+        {
+            userAuth.Failed2faAttempts++;
+            if (userAuth.Failed2faAttempts >= Max2faAttempts)
+            {
+                userAuth.TwoFactorLockoutEndTime = DateTime.UtcNow.Add(TwoFactorLockoutDuration);
+                _logger.LogWarning("2FA locked out for user {UserId} after {Attempts} failed attempts",
+                    userId, userAuth.Failed2faAttempts);
+            }
+            _unitOfWork.Repository<UserAuth>().Update(userAuth);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return Result<LoginResponse>.Failure("Invalid verification code.");
+        }
+
+        // Valid code — reset failed attempts and issue full tokens
+        userAuth.Failed2faAttempts = 0;
+        userAuth.TwoFactorLockoutEndTime = null;
+        _unitOfWork.Repository<UserAuth>().Update(userAuth);
+
+        var accessToken = _jwtTokenGenerator.GenerateAccessToken(user.Id, user.Email, user.Role.ToString());
+        var refreshToken = _jwtTokenGenerator.GenerateRefreshToken();
+
+        var refreshTokenEntity = new RefreshToken
+        {
+            UserId = user.Id,
+            Token = HashToken(refreshToken),
+            ExpiresAt = DateTime.UtcNow.AddDays(AppConstants.RefreshTokenExpirationDays),
+            IpAddress = ipAddress
+        };
+
+        await _unitOfWork.Repository<RefreshToken>().AddAsync(refreshTokenEntity, cancellationToken);
+
+        user.LastLogin = DateTime.UtcNow;
+        _unitOfWork.Users.Update(user);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("User {UserId} completed 2FA login verification", user.Id);
+
+        return Result<LoginResponse>.Success(new LoginResponse
+        {
+            AccessToken = accessToken,
+            RefreshToken = refreshToken,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(AppConstants.AccessTokenExpirationMinutes),
+            User = MapToUserDto(user)
+        });
     }
 
     private static string GeneratePasswordResetEmail(string name, string resetUrl)

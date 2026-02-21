@@ -118,6 +118,71 @@ public class JwtTokenGenerator
         }
     }
 
+    /// <summary>
+    /// Generate a short-lived token for 2FA verification during login.
+    /// Issued after successful password check when TOTP is enabled.
+    /// </summary>
+    public string GenerateTwoFactorToken(string userId)
+    {
+        var claims = new[]
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, userId),
+            new Claim("purpose", "two_factor"),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        };
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var token = new JwtSecurityToken(
+            issuer: _issuer,
+            audience: _audience,
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(5),
+            signingCredentials: creds
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    /// <summary>
+    /// Validate a two-factor token and extract the userId.
+    /// Returns null if token is invalid, expired, or not a 2FA token.
+    /// </summary>
+    public string? ValidateTwoFactorToken(string token)
+    {
+        try
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.UTF8.GetBytes(_secretKey);
+
+            var validationParameters = new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ValidateIssuer = true,
+                ValidIssuer = _issuer,
+                ValidateAudience = true,
+                ValidAudience = _audience,
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.FromSeconds(5)
+            };
+
+            var principal = tokenHandler.ValidateToken(token, validationParameters, out _);
+
+            var purposeClaim = principal.FindFirst("purpose")?.Value;
+            if (purposeClaim != "two_factor")
+                return null;
+
+            return principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public ClaimsPrincipal? ValidateToken(string token)
     {
         try

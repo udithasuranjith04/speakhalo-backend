@@ -145,6 +145,19 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPost("totp/login-verify")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyLoginTotp([FromBody] TotpLoginVerifyRequest request, CancellationToken cancellationToken)
+    {
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var result = await _authService.VerifyLoginTotpAsync(request.TwoFactorToken, request.Code, ipAddress, cancellationToken);
+
+        if (!result.IsSuccess)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
     [HttpPost("totp/setup")]
     [Authorize]
     public async Task<IActionResult> SetupTotp(CancellationToken cancellationToken)

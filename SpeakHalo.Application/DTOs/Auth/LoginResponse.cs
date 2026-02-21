@@ -15,5 +15,11 @@ public class LoginResponse
     /// </summary>
     public string? PasswordChangeToken { get; set; }
 
+    /// <summary>
+    /// Short-lived signed token for 2FA verification during login.
+    /// Only present when RequiresTwoFactor is true.
+    /// </summary>
+    public string? TwoFactorToken { get; set; }
+
     public string? Message { get; set; }
 }
