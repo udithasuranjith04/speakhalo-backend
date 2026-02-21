@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OtpNet;
+using QRCoder;
 using SpeakHalo.Application.DTOs.Auth;
 using SpeakHalo.Application.Interfaces;
 using SpeakHalo.Domain.Entities;
@@ -489,6 +490,13 @@ public class AuthService : IAuthService
         // Build OTP URI for authenticator apps
         var otpUri = $"otpauth://totp/SpeakHalo:{Uri.EscapeDataString(user.Email)}?secret={base32Secret}&issuer=SpeakHalo&digits=6&period=30";
 
+        // Generate QR code as base64 PNG data URI
+        using var qrGenerator = new QRCodeGenerator();
+        using var qrCodeData = qrGenerator.CreateQrCode(otpUri, QRCodeGenerator.ECCLevel.M);
+        using var qrCode = new PngByteQRCode(qrCodeData);
+        var qrCodeBytes = qrCode.GetGraphic(5);
+        var qrCodeDataUri = $"data:image/png;base64,{Convert.ToBase64String(qrCodeBytes)}";
+
         // Generate 8 backup codes
         var backupCodes = new List<string>();
         for (var i = 0; i < 8; i++)
@@ -510,7 +518,7 @@ public class AuthService : IAuthService
 
         return Result<TotpSetupResponse>.Success(new TotpSetupResponse
         {
-            QrCodeUri = otpUri,
+            QrCodeUri = qrCodeDataUri,
             Secret = base32Secret,
             BackupCodes = backupCodes
         });

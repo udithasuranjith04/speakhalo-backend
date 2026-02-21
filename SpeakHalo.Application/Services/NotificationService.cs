@@ -4,7 +4,6 @@ using SpeakHalo.Application.Interfaces;
 using SpeakHalo.Domain.Entities;
 using SpeakHalo.Domain.Interfaces.Repositories;
 using SpeakHalo.Shared.Constants;
-using SpeakHalo.Shared.Extensions;
 using SpeakHalo.Shared.Models;
 
 namespace SpeakHalo.Application.Services;
@@ -71,20 +70,19 @@ public class NotificationService : INotificationService
         try
         {
             var notifications = await _unitOfWork.Repository<Notification>().FindAsync(n => n.UserId == userId, cancellationToken);
-            var orderedNotifications = notifications.OrderByDescending(n => n.CreatedAt);
+            var orderedNotifications = notifications.OrderByDescending(n => n.CreatedAt).ToList();
 
-            var paginatedNotifications = await orderedNotifications
-                .AsQueryable()
-                .ToPaginatedListAsync(pageNumber, pageSize, cancellationToken);
+            var totalCount = orderedNotifications.Count;
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1) pageSize = 20;
 
-            var responses = paginatedNotifications.Items.Select(MapToResponse).ToList();
+            var items = orderedNotifications
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .Select(MapToResponse)
+                .ToList();
 
-            var result = new PaginatedList<NotificationResponse>(
-                responses,
-                paginatedNotifications.TotalCount,
-                paginatedNotifications.CurrentPage,
-                paginatedNotifications.PageSize
-            );
+            var result = new PaginatedList<NotificationResponse>(items, totalCount, pageNumber, pageSize);
 
             return Result<PaginatedList<NotificationResponse>>.Success(result);
         }
