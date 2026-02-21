@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using OtpNet;
 using SpeakHalo.Application.DTOs.Auth;
 using SpeakHalo.Application.Interfaces;
 using SpeakHalo.Domain.Entities;
@@ -465,6 +467,161 @@ public class AuthService : IAuthService
             ExpiresAt = DateTime.UtcNow.AddMinutes(AppConstants.AccessTokenExpirationMinutes),
             User = MapToUserDto(user)
         });
+    }
+
+    private const int Max2faAttempts = 5;
+    private static readonly TimeSpan TwoFactorLockoutDuration = TimeSpan.FromMinutes(15);
+
+    public async Task<Result<TotpSetupResponse>> SetupTotpAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        if (user == null)
+            return Result<TotpSetupResponse>.Failure("User not found");
+
+        var userAuth = await GetUserAuthAsync(userId, cancellationToken);
+        if (userAuth == null)
+            return Result<TotpSetupResponse>.Failure("User authentication record not found");
+
+        // Generate a 20-byte random secret
+        var secretBytes = RandomNumberGenerator.GetBytes(20);
+        var base32Secret = Base32Encoding.ToString(secretBytes);
+
+        // Build OTP URI for authenticator apps
+        var otpUri = $"otpauth://totp/SpeakHalo:{Uri.EscapeDataString(user.Email)}?secret={base32Secret}&issuer=SpeakHalo&digits=6&period=30";
+
+        // Generate 8 backup codes
+        var backupCodes = new List<string>();
+        for (var i = 0; i < 8; i++)
+        {
+            var codeBytes = RandomNumberGenerator.GetBytes(4);
+            var code = (BitConverter.ToUInt32(codeBytes, 0) % 100000000).ToString("D8");
+            backupCodes.Add(code);
+        }
+
+        // Store secret and backup codes (TOTP not yet enabled until verify)
+        userAuth.TotpSecret = base32Secret;
+        userAuth.TotpBackupCodes = JsonSerializer.Serialize(backupCodes);
+        // TotpEnabled stays false until verified
+
+        _unitOfWork.Repository<UserAuth>().Update(userAuth);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("TOTP setup initiated for user {UserId}", userId);
+
+        return Result<TotpSetupResponse>.Success(new TotpSetupResponse
+        {
+            QrCodeUri = otpUri,
+            Secret = base32Secret,
+            BackupCodes = backupCodes
+        });
+    }
+
+    public async Task<Result> VerifyTotpAsync(string userId, string code, CancellationToken cancellationToken = default)
+    {
+        var userAuth = await GetUserAuthAsync(userId, cancellationToken);
+        if (userAuth == null)
+            return Result.Failure("User authentication record not found");
+
+        if (string.IsNullOrEmpty(userAuth.TotpSecret))
+            return Result.Failure("TOTP has not been set up. Please call setup first.");
+
+        // Check 2FA lockout
+        if (userAuth.TwoFactorLockoutEndTime.HasValue && userAuth.TwoFactorLockoutEndTime.Value > DateTime.UtcNow)
+        {
+            var remaining = (int)Math.Ceiling((userAuth.TwoFactorLockoutEndTime.Value - DateTime.UtcNow).TotalMinutes);
+            return Result.Failure($"Too many failed attempts. Try again in {remaining} minute(s).");
+        }
+
+        var secretBytes = Base32Encoding.ToBytes(userAuth.TotpSecret);
+        var totp = new Totp(secretBytes, step: 30, totpSize: 6);
+
+        // Check TOTP code (window=1 allows +-30s for clock drift)
+        if (totp.VerifyTotp(code, out _, new VerificationWindow(previous: 1, future: 1)))
+        {
+            userAuth.TotpEnabled = true;
+            userAuth.Failed2faAttempts = 0;
+            userAuth.TwoFactorLockoutEndTime = null;
+            _unitOfWork.Repository<UserAuth>().Update(userAuth);
+
+            // Sync to User entity
+            var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+            if (user != null)
+            {
+                user.TotpEnabled = true;
+                _unitOfWork.Users.Update(user);
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("TOTP enabled for user {UserId}", userId);
+            return Result.Success("Two-factor authentication has been enabled.");
+        }
+
+        // Check backup codes
+        if (!string.IsNullOrEmpty(userAuth.TotpBackupCodes))
+        {
+            var backupCodes = JsonSerializer.Deserialize<List<string>>(userAuth.TotpBackupCodes) ?? [];
+            if (backupCodes.Contains(code))
+            {
+                backupCodes.Remove(code);
+                userAuth.TotpBackupCodes = JsonSerializer.Serialize(backupCodes);
+                userAuth.TotpEnabled = true;
+                userAuth.Failed2faAttempts = 0;
+                userAuth.TwoFactorLockoutEndTime = null;
+                _unitOfWork.Repository<UserAuth>().Update(userAuth);
+
+                var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+                if (user != null)
+                {
+                    user.TotpEnabled = true;
+                    _unitOfWork.Users.Update(user);
+                }
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                _logger.LogInformation("TOTP enabled for user {UserId} using backup code", userId);
+                return Result.Success("Two-factor authentication has been enabled (backup code consumed).");
+            }
+        }
+
+        // Invalid code — track failed attempt
+        userAuth.Failed2faAttempts++;
+        if (userAuth.Failed2faAttempts >= Max2faAttempts)
+        {
+            userAuth.TwoFactorLockoutEndTime = DateTime.UtcNow.Add(TwoFactorLockoutDuration);
+            _logger.LogWarning("2FA locked out for user {UserId} after {Attempts} failed attempts",
+                userId, userAuth.Failed2faAttempts);
+        }
+
+        _unitOfWork.Repository<UserAuth>().Update(userAuth);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Failure("Invalid verification code.");
+    }
+
+    public async Task<Result> DisableTotpAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var userAuth = await GetUserAuthAsync(userId, cancellationToken);
+        if (userAuth == null)
+            return Result.Failure("User authentication record not found");
+
+        userAuth.TotpSecret = null;
+        userAuth.TotpBackupCodes = null;
+        userAuth.TotpEnabled = false;
+        userAuth.Failed2faAttempts = 0;
+        userAuth.TwoFactorLockoutEndTime = null;
+        _unitOfWork.Repository<UserAuth>().Update(userAuth);
+
+        // Sync to User entity
+        var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        if (user != null)
+        {
+            user.TotpEnabled = false;
+            _unitOfWork.Users.Update(user);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("TOTP disabled for user {UserId}", userId);
+
+        return Result.Success("Two-factor authentication has been disabled.");
     }
 
     private static string GeneratePasswordResetEmail(string name, string resetUrl)
