@@ -14,6 +14,7 @@ public class InvoiceService : IInvoiceService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IUsageMeteringService _usageMeteringService;
     private readonly IEmailService _emailService;
+    private readonly ISMSConversationService _smsService;
     private readonly ILogger<InvoiceService> _logger;
     private readonly string _supportEmail;
 
@@ -21,12 +22,14 @@ public class InvoiceService : IInvoiceService
         IUnitOfWork unitOfWork,
         IUsageMeteringService usageMeteringService,
         IEmailService emailService,
+        ISMSConversationService smsService,
         IConfiguration configuration,
         ILogger<InvoiceService> logger)
     {
         _unitOfWork = unitOfWork;
         _usageMeteringService = usageMeteringService;
         _emailService = emailService;
+        _smsService = smsService;
         _logger = logger;
         _supportEmail = configuration["SendGrid:SupportEmail"] ?? "support@speakhalo.com";
     }
@@ -146,6 +149,9 @@ public class InvoiceService : IInvoiceService
 
             invoice.LineItems = lineItems.ToList();
 
+            if (!string.IsNullOrEmpty(invoice.CustomerId))
+                invoice.Customer = await _unitOfWork.Repository<Customer>().GetByIdAsync(invoice.CustomerId, cancellationToken);
+
             return Result<InvoiceResponse>.Success(MapToResponse(invoice));
         }
         catch (Exception ex)
@@ -195,10 +201,18 @@ public class InvoiceService : IInvoiceService
             var lineItemsByInvoice = allLineItems.GroupBy(li => li.InvoiceId)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
+            // Batch-load customers for invoices that have CustomerId
+            var customerIds = invoiceList.Where(i => !string.IsNullOrEmpty(i.CustomerId)).Select(i => i.CustomerId!).Distinct().ToList();
+            var customers = customerIds.Count > 0
+                ? (await _unitOfWork.Repository<Customer>().FindAsync(c => customerIds.Contains(c.Id), cancellationToken)).ToDictionary(c => c.Id)
+                : new Dictionary<string, Customer>();
+
             var responses = new List<InvoiceResponse>();
             foreach (var invoice in invoiceList)
             {
                 invoice.LineItems = lineItemsByInvoice.TryGetValue(invoice.Id, out var items) ? items : new List<InvoiceLineItem>();
+                if (!string.IsNullOrEmpty(invoice.CustomerId) && customers.TryGetValue(invoice.CustomerId, out var customer))
+                    invoice.Customer = customer;
                 responses.Add(MapToResponse(invoice));
             }
 
@@ -271,6 +285,120 @@ public class InvoiceService : IInvoiceService
         {
             _logger.LogError(ex, "Failed to email invoice {InvoiceId}", invoiceId);
             return Result<bool>.Failure($"Failed to email invoice: {ex.Message}");
+        }
+    }
+
+    public async Task<Result<InvoiceResponse>> CreateServiceInvoiceAsync(string userId, CreateServiceInvoiceRequest request, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var customer = await _unitOfWork.Repository<Customer>().GetByIdAsync(request.CustomerId, cancellationToken);
+            if (customer == null || customer.UserId != userId)
+                return Result<InvoiceResponse>.Failure(ErrorMessages.NotFound("Customer"));
+
+            var invoiceNumber = await GenerateInvoiceNumberAsync(userId, cancellationToken);
+
+            var now = DateTime.UtcNow;
+            var invoice = new Invoice
+            {
+                UserId = userId,
+                CustomerId = request.CustomerId,
+                InvoiceNumber = invoiceNumber,
+                PeriodStart = now,
+                PeriodEnd = now,
+                Status = "unpaid",
+                Notes = request.Notes
+            };
+
+            var lineItems = request.LineItems.Select(li => new InvoiceLineItem
+            {
+                Description = li.Description,
+                Quantity = li.Quantity,
+                UnitPrice = li.UnitPrice,
+                Amount = li.Quantity * li.UnitPrice,
+                Category = li.Category
+            }).ToList();
+
+            invoice.Subtotal = lineItems.Sum(li => li.Amount);
+            invoice.Tax = invoice.Subtotal * request.TaxRate;
+            invoice.Total = invoice.Subtotal + invoice.Tax;
+
+            await _unitOfWork.Repository<Invoice>().AddAsync(invoice, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            foreach (var lineItem in lineItems)
+            {
+                lineItem.InvoiceId = invoice.Id;
+                await _unitOfWork.Repository<InvoiceLineItem>().AddAsync(lineItem, cancellationToken);
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            invoice.LineItems = lineItems;
+            invoice.Customer = customer;
+
+            return Result<InvoiceResponse>.Success(MapToResponse(invoice));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create service invoice for user {UserId}", userId);
+            return Result<InvoiceResponse>.Failure($"Failed to create invoice: {ex.Message}");
+        }
+    }
+
+    public async Task<Result<bool>> SendInvoiceSmsAsync(string invoiceId, string userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var invoice = await _unitOfWork.Repository<Invoice>().GetByIdAsync(invoiceId, cancellationToken);
+            if (invoice == null || invoice.UserId != userId)
+                return Result<bool>.Failure(ErrorMessages.NotFound("Invoice"));
+
+            if (string.IsNullOrEmpty(invoice.CustomerId))
+                return Result<bool>.Failure("Invoice has no associated customer");
+
+            var customer = await _unitOfWork.Repository<Customer>().GetByIdAsync(invoice.CustomerId, cancellationToken);
+            if (customer == null)
+                return Result<bool>.Failure(ErrorMessages.NotFound("Customer"));
+
+            if (string.IsNullOrEmpty(customer.Phone))
+                return Result<bool>.Failure("Customer has no phone number");
+
+            var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+            var profile = user != null ? await _unitOfWork.Repository<UserProfile>()
+                .FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken) : null;
+            var businessName = profile?.BusinessName ?? "SpeakHalo";
+
+            var lineItems = await _unitOfWork.Repository<InvoiceLineItem>()
+                .FindAsync(li => li.InvoiceId == invoiceId, cancellationToken);
+            var services = string.Join(", ", lineItems.Select(li => li.Description).Take(3));
+            if (lineItems.Count() > 3)
+                services += $" +{lineItems.Count() - 3} more";
+
+            var message = $"Invoice {invoice.InvoiceNumber} from {businessName}: ${invoice.Total:F2} for {services}. Thank you!";
+
+            var smsRequest = new SendSMSRequest
+            {
+                UserId = userId,
+                ToNumber = customer.Phone,
+                Content = message,
+                CustomerId = customer.Id
+            };
+
+            var smsResult = await _smsService.SendSMSAsync(smsRequest, cancellationToken);
+            if (!smsResult.IsSuccess)
+                return Result<bool>.Failure(smsResult.Errors);
+
+            invoice.SmsSentAt = DateTime.UtcNow;
+            _unitOfWork.Repository<Invoice>().Update(invoice);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result<bool>.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send SMS for invoice {InvoiceId}", invoiceId);
+            return Result<bool>.Failure($"Failed to send SMS: {ex.Message}");
         }
     }
 
@@ -350,6 +478,9 @@ public class InvoiceService : IInvoiceService
         {
             Id = invoice.Id,
             UserId = invoice.UserId,
+            CustomerId = invoice.CustomerId,
+            CustomerName = invoice.Customer?.Name,
+            CustomerPhone = invoice.Customer?.Phone,
             InvoiceNumber = invoice.InvoiceNumber,
             PeriodStart = invoice.PeriodStart,
             PeriodEnd = invoice.PeriodEnd,
@@ -362,6 +493,7 @@ public class InvoiceService : IInvoiceService
             PaymentReference = invoice.PaymentReference,
             PdfUrl = invoice.PdfUrl,
             EmailedAt = invoice.EmailedAt,
+            SmsSentAt = invoice.SmsSentAt,
             Notes = invoice.Notes,
             LineItems = invoice.LineItems.Select(li => new InvoiceLineItemDto
             {

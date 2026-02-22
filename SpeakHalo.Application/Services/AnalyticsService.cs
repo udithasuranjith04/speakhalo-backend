@@ -33,17 +33,18 @@ public class AnalyticsService : IAnalyticsService
             var callsList = calls.ToList();
 
             var totalCalls = callsList.Count;
-            var answeredCalls = callsList.Count(c => c.DurationSeconds > 0);
-            var missedCalls = totalCalls - answeredCalls;
+            var missedCalls = callsList.Count(c => c.Outcome == CallOutcome.Missed || c.Outcome == CallOutcome.Voicemail);
+            var answeredCalls = totalCalls - missedCalls;
             var callsWithAppointments = callsList.Count(c => c.AppointmentScheduled);
             var callsWithQuotes = callsList.Count(c => c.QuoteRequested);
+            var callsWithDuration = callsList.Where(c => c.DurationSeconds > 0).ToList();
 
             return new CallAnalyticsDto
             {
                 TotalCalls = totalCalls,
                 AnsweredCalls = answeredCalls,
                 MissedCalls = missedCalls,
-                AverageCallDuration = callsList.Any() ? callsList.Average(c => c.DurationSeconds) : 0,
+                AverageCallDuration = callsWithDuration.Any() ? callsWithDuration.Average(c => c.DurationSeconds) : 0,
                 TotalMinutes = callsList.Sum(c => c.DurationSeconds) / 60,
                 TotalCost = callsList.Sum(c => c.Cost),
                 AnswerRate = totalCalls > 0 ? (double)answeredCalls / totalCalls * 100 : 0,
@@ -90,10 +91,25 @@ public class AnalyticsService : IAnalyticsService
             var invoices = await GetInvoicesInRangeAsync(userId, startDate, endDate, cancellationToken);
             var invoicesList = invoices.ToList();
 
-            var totalRevenue = invoicesList.Where(i => i.Status == "paid").Sum(i => i.Total);
-            var monthlyRecurring = invoicesList
-                .Where(i => i.Status == "paid" && i.CreatedAt.Month == DateTime.UtcNow.Month)
+            var paidInvoices = invoicesList.Where(i => i.Status == "paid").ToList();
+            var totalRevenue = paidInvoices.Sum(i => i.Total);
+            var monthlyRecurring = paidInvoices
+                .Where(i => i.CreatedAt.Month == DateTime.UtcNow.Month && i.CreatedAt.Year == DateTime.UtcNow.Year)
                 .Sum(i => i.Total);
+
+            // Load line items for paid invoices to calculate revenue by category
+            var paidInvoiceIds = paidInvoices.Select(i => i.Id).ToList();
+            var lineItems = paidInvoiceIds.Count > 0
+                ? (await _unitOfWork.Repository<InvoiceLineItem>()
+                    .FindAsync(li => paidInvoiceIds.Contains(li.InvoiceId), cancellationToken)).ToList()
+                : new List<InvoiceLineItem>();
+
+            var revenueByCategory = lineItems
+                .Where(li => !string.IsNullOrEmpty(li.Category))
+                .GroupBy(li => li.Category)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Sum(li => li.Amount));
 
             return new RevenueAnalyticsDto
             {
@@ -113,6 +129,7 @@ public class AnalyticsService : IAnalyticsService
                     })
                     .OrderBy(m => m.Month)
                     .ToList(),
+                RevenueByCategory = revenueByCategory,
                 ProjectedMonthlyRevenue = monthlyRecurring
             };
         }, TimeSpan.FromMinutes(10), cancellationToken);
@@ -334,8 +351,9 @@ public class AnalyticsService : IAnalyticsService
 
     private async Task<IEnumerable<Call>> GetCallsInRangeAsync(string userId, DateTime? startDate, DateTime? endDate, CancellationToken cancellationToken)
     {
+        var now = DateTime.UtcNow;
         var query = await _unitOfWork.Repository<Call>()
-            .FindAsync(c => c.UserId == userId, cancellationToken);
+            .FindAsync(c => c.UserId == userId && c.CreatedAt <= now, cancellationToken);
 
         if (startDate.HasValue)
             query = query.Where(c => c.CreatedAt >= startDate.Value);

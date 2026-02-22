@@ -148,6 +148,7 @@ builder.Services.AddScoped<IUsageMeteringService, SpeakHalo.Application.Services
 builder.Services.AddScoped<IUsageTrackingService, SpeakHalo.Infrastructure.Services.UsageTrackingService>();
 builder.Services.AddScoped<IAIFollowUpService, SpeakHalo.Infrastructure.Services.AIFollowUpService>();
 builder.Services.AddScoped<IInvoiceService, SpeakHalo.Application.Services.InvoiceService>();
+builder.Services.AddScoped<IServiceCatalogService, SpeakHalo.Application.Services.ServiceCatalogService>();
 builder.Services.AddScoped<ITeamService, SpeakHalo.Application.Services.TeamService>();
 builder.Services.AddScoped<ICallerRecognitionService, SpeakHalo.Application.Services.CallerRecognitionService>();
 

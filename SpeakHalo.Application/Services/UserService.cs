@@ -31,7 +31,11 @@ public class UserService : IUserService
             if (user == null)
                 return Result<UserResponse>.Failure(ErrorMessages.NotFound("User"));
 
-            return Result<UserResponse>.Success(MapToResponse(user));
+            var profiles = await _unitOfWork.Repository<Domain.Entities.UserProfile>()
+                .FindAsync(p => p.UserId == userId, cancellationToken);
+            var businessAddress = profiles.FirstOrDefault()?.BusinessAddress;
+
+            return Result<UserResponse>.Success(MapToResponse(user, businessAddress));
         }
         catch (Exception ex)
         {
@@ -71,9 +75,43 @@ public class UserService : IUserService
             if (request.BusinessName != null) user.BusinessName = request.BusinessName;
 
             _unitOfWork.Users.Update(user);
+
+            // Update business address on UserProfile
+            string? savedAddress = null;
+            if (request.BusinessAddress != null)
+            {
+                var profiles = await _unitOfWork.Repository<Domain.Entities.UserProfile>()
+                    .FindAsync(p => p.UserId == userId, cancellationToken);
+                var profile = profiles.FirstOrDefault();
+                if (profile == null)
+                {
+                    profile = new Domain.Entities.UserProfile
+                    {
+                        UserId = userId,
+                        BusinessName = user.BusinessName,
+                        BusinessAddress = request.BusinessAddress,
+                        Industry = user.Industry,
+                    };
+                    await _unitOfWork.Repository<Domain.Entities.UserProfile>().AddAsync(profile, cancellationToken);
+                }
+                else
+                {
+                    profile.BusinessAddress = request.BusinessAddress;
+                    profile.UpdatedAt = DateTime.UtcNow;
+                    _unitOfWork.Repository<Domain.Entities.UserProfile>().Update(profile);
+                }
+                savedAddress = profile.BusinessAddress;
+            }
+            else
+            {
+                var profiles = await _unitOfWork.Repository<Domain.Entities.UserProfile>()
+                    .FindAsync(p => p.UserId == userId, cancellationToken);
+                savedAddress = profiles.FirstOrDefault()?.BusinessAddress;
+            }
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            return Result<UserResponse>.Success(MapToResponse(user));
+            return Result<UserResponse>.Success(MapToResponse(user, savedAddress));
         }
         catch (Exception ex)
         {
@@ -153,7 +191,7 @@ public class UserService : IUserService
                 .AsQueryable()
                 .ToPaginatedListAsync(pageNumber, pageSize, cancellationToken);
 
-            var responses = paginatedUsers.Items.Select(MapToResponse).ToList();
+            var responses = paginatedUsers.Items.Select(u => MapToResponse(u)).ToList();
 
             var result = new PaginatedList<UserResponse>(
                 responses,
@@ -171,7 +209,7 @@ public class UserService : IUserService
         }
     }
 
-    private static UserResponse MapToResponse(Domain.Entities.User user)
+    private static UserResponse MapToResponse(Domain.Entities.User user, string? businessAddress = null)
     {
         return new UserResponse
         {
@@ -183,8 +221,10 @@ public class UserService : IUserService
             Industry = user.Industry.ToString(),
             Phone = null,
             Website = null,
+            BusinessAddress = businessAddress,
             IsActive = user.IsActive,
             EmailVerified = false,
+            TotpEnabled = user.TotpEnabled,
             CreatedAt = user.CreatedAt
         };
     }

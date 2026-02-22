@@ -67,13 +67,13 @@ public class CallService : ICallService
         }
     }
 
-    public async Task<Result<PaginatedList<CallResponse>>> GetUserCallsAsync(string userId, int pageNumber = 1, int pageSize = 10, CancellationToken cancellationToken = default)
+    public async Task<Result<PaginatedList<CallResponse>>> GetUserCallsAsync(string userId, int pageNumber = 1, int pageSize = 10, string? search = null, CancellationToken cancellationToken = default)
     {
         try
         {
             var skip = (pageNumber - 1) * pageSize;
-            var totalCount = await _unitOfWork.Calls.CountAsync(c => c.UserId == userId, cancellationToken);
-            var calls = await _unitOfWork.Calls.GetUserCallsAsync(userId, skip, pageSize, cancellationToken);
+            var totalCount = await _unitOfWork.Calls.CountUserCallsAsync(userId, search, cancellationToken);
+            var calls = await _unitOfWork.Calls.GetUserCallsAsync(userId, skip, pageSize, search, cancellationToken);
 
             var responses = calls.Select(MapToCallResponse).ToList();
 
@@ -233,8 +233,10 @@ public class CallService : ICallService
     {
         try
         {
+            var now = DateTime.UtcNow;
+            var effectiveEnd = endDate > now ? now : endDate;
             var calls = await _unitOfWork.Calls.FindAsync(
-                c => c.UserId == userId && c.CreatedAt >= startDate && c.CreatedAt <= endDate,
+                c => c.UserId == userId && c.CreatedAt >= startDate && c.CreatedAt <= effectiveEnd,
                 cancellationToken
             );
 

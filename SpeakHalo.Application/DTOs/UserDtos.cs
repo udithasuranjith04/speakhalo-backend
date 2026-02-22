@@ -7,6 +7,7 @@ public record UpdateUserRequest
 {
     public string? Name { get; init; }
     public string? BusinessName { get; init; }
+    public string? BusinessAddress { get; init; }
 }
 
 public record UpdatePasswordRequest
@@ -26,7 +27,9 @@ public record UserResponse
     public string? Industry { get; init; }
     public string? Phone { get; init; }
     public string? Website { get; init; }
+    public string? BusinessAddress { get; init; }
     public bool IsActive { get; init; }
     public bool EmailVerified { get; init; }
+    public bool TotpEnabled { get; init; }
     public DateTime CreatedAt { get; init; }
 }

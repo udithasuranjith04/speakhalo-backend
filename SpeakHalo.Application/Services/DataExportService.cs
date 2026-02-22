@@ -304,8 +304,9 @@ public class DataExportService : IDataExportService
 
     private async Task<IEnumerable<Call>> GetCallsAsync(string userId, DateTime? startDate, DateTime? endDate, CancellationToken cancellationToken)
     {
+        var now = DateTime.UtcNow;
         var query = await _unitOfWork.Repository<Call>()
-            .FindAsync(c => c.UserId == userId, cancellationToken);
+            .FindAsync(c => c.UserId == userId && c.CreatedAt <= now, cancellationToken);
 
         if (startDate.HasValue)
             query = query.Where(c => c.CreatedAt >= startDate.Value);

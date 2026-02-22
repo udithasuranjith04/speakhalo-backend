@@ -3,6 +3,7 @@ namespace SpeakHalo.Domain.Entities;
 public class Invoice : BaseEntity
 {
     public string UserId { get; set; } = string.Empty;
+    public string? CustomerId { get; set; }
     public string InvoiceNumber { get; set; } = string.Empty;
     public DateTime PeriodStart { get; set; }
     public DateTime PeriodEnd { get; set; }
@@ -18,11 +19,13 @@ public class Invoice : BaseEntity
 
     public string? PdfUrl { get; set; }
     public DateTime? EmailedAt { get; set; }
+    public DateTime? SmsSentAt { get; set; }
 
     public string? Notes { get; set; }
 
     public uint RowVersion { get; set; }
 
     public virtual User User { get; set; } = null!;
+    public virtual Customer? Customer { get; set; }
     public virtual ICollection<InvoiceLineItem> LineItems { get; set; } = new List<InvoiceLineItem>();
 }

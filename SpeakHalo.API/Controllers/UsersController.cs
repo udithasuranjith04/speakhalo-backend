@@ -19,11 +19,13 @@ public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IGeocodingService _geocodingService;
 
-    public UsersController(IUserService userService, IUnitOfWork unitOfWork)
+    public UsersController(IUserService userService, IUnitOfWork unitOfWork, IGeocodingService geocodingService)
     {
         _userService = userService;
         _unitOfWork = unitOfWork;
+        _geocodingService = geocodingService;
     }
 
     [HttpGet("{id}")]
@@ -203,6 +205,31 @@ public class UsersController : ControllerBase
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Ok(settings);
+    }
+
+    [HttpGet("business-location")]
+    public async Task<IActionResult> GetBusinessLocation(CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var profiles = await _unitOfWork.Repository<UserProfile>()
+            .FindAsync(p => p.UserId == userId, cancellationToken);
+        var profile = profiles.FirstOrDefault();
+
+        if (profile == null || string.IsNullOrWhiteSpace(profile.BusinessAddress))
+            return Ok(new { hasLocation = false });
+
+        var coords = await _geocodingService.GeocodeAddressAsync(profile.BusinessAddress, null, null, null, cancellationToken);
+        if (coords == null)
+            return Ok(new { hasLocation = false, address = profile.BusinessAddress });
+
+        return Ok(new
+        {
+            hasLocation = true,
+            latitude = coords.Value.Latitude,
+            longitude = coords.Value.Longitude,
+            address = profile.BusinessAddress,
+            businessName = profile.BusinessName
+        });
     }
 }
 

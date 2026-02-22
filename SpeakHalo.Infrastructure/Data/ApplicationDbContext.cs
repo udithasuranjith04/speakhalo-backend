@@ -91,6 +91,9 @@ public class ApplicationDbContext : DbContext
     // Industry Knowledge Templates
     public DbSet<IndustryKnowledgeTemplate> IndustryKnowledgeTemplates => Set<IndustryKnowledgeTemplate>();
 
+    // Service Catalog
+    public DbSet<ServiceCatalogItem> ServiceCatalogItems => Set<ServiceCatalogItem>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -420,10 +423,15 @@ public class ApplicationDbContext : DbContext
             // Composite indexes for invoice queries
             entity.HasIndex(e => new { e.UserId, e.Status });
             entity.HasIndex(e => new { e.UserId, e.PeriodStart });
+            entity.HasIndex(e => e.CustomerId);
             entity.HasOne(e => e.User)
                 .WithMany()
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Customer)
+                .WithMany()
+                .HasForeignKey(e => e.CustomerId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             // Check constraints for data integrity
             entity.ToTable(t => t.HasCheckConstraint("CK_Invoice_Subtotal_Positive", "\"Subtotal\" >= 0"));
@@ -444,6 +452,21 @@ public class ApplicationDbContext : DbContext
             // Check constraints for data integrity
             entity.ToTable(t => t.HasCheckConstraint("CK_InvoiceLineItem_Quantity_Positive", "\"Quantity\" > 0"));
             entity.ToTable(t => t.HasCheckConstraint("CK_InvoiceLineItem_UnitPrice_Positive", "\"UnitPrice\" >= 0"));
+        });
+
+        modelBuilder.Entity<ServiceCatalogItem>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.UserId);
+            entity.HasIndex(e => new { e.UserId, e.IsActive });
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Category).HasMaxLength(100);
+            entity.Property(e => e.BasePrice).HasColumnType("decimal(18,2)");
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.ToTable(t => t.HasCheckConstraint("CK_ServiceCatalogItem_Price_Positive", "\"BasePrice\" >= 0"));
         });
 
         modelBuilder.Entity<VoiceAgent>(entity =>

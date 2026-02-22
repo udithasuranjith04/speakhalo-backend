@@ -7,7 +7,7 @@ public class RevenueAnalyticsDto
     public decimal UsageRevenue { get; set; }
     public decimal AverageRevenuePerUser { get; set; }
     public List<MonthlyRevenueDto> MonthlyTrends { get; set; } = new();
-    public Dictionary<string, decimal> RevenueByPlan { get; set; } = new();
+    public Dictionary<string, decimal> RevenueByCategory { get; set; } = new();
     public decimal ProjectedMonthlyRevenue { get; set; }
 }
 
