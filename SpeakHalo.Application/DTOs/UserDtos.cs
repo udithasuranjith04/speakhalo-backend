@@ -16,6 +16,15 @@ public record UpdatePasswordRequest
     public required string NewPassword { get; init; }
 }
 
+public record UpdateOnboardingRequest
+{
+    public int Step { get; init; }
+    public bool Completed { get; init; }
+    public string? BusinessName { get; init; }
+    public string? BusinessAddress { get; init; }
+    public string? Industry { get; init; }
+}
+
 public record UserResponse
 {
     public required string Id { get; init; }
@@ -31,5 +40,7 @@ public record UserResponse
     public bool IsActive { get; init; }
     public bool EmailVerified { get; init; }
     public bool TotpEnabled { get; init; }
+    public bool OnboardingCompleted { get; init; }
+    public int OnboardingStep { get; init; }
     public DateTime CreatedAt { get; init; }
 }

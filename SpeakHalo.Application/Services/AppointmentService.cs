@@ -69,12 +69,25 @@ public class AppointmentService : IAppointmentService
         }
     }
 
-    public async Task<Result<PaginatedList<AppointmentResponse>>> GetUserAppointmentsAsync(string userId, int pageNumber = 1, int pageSize = 10, CancellationToken cancellationToken = default)
+    public async Task<Result<PaginatedList<AppointmentResponse>>> GetUserAppointmentsAsync(string userId, int pageNumber = 1, int pageSize = 10, string? search = null, CancellationToken cancellationToken = default)
     {
         try
         {
             var appointments = await _unitOfWork.Appointments.FindAsync(a => a.UserId == userId, cancellationToken);
-            var ordered = appointments.OrderByDescending(a => a.ScheduledAt).ToList();
+            var filtered = appointments.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim();
+                filtered = filtered.Where(a =>
+                    (a.Customer?.Name != null && a.Customer.Name.Contains(s, StringComparison.OrdinalIgnoreCase)) ||
+                    (a.Customer?.Phone != null && a.Customer.Phone.Contains(s, StringComparison.OrdinalIgnoreCase)) ||
+                    a.ServiceType.ToString().Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                    (a.Notes != null && a.Notes.Contains(s, StringComparison.OrdinalIgnoreCase))
+                );
+            }
+
+            var ordered = filtered.OrderByDescending(a => a.ScheduledAt).ToList();
 
             if (pageNumber < 1) pageNumber = 1;
             if (pageSize < 1) pageSize = 10;

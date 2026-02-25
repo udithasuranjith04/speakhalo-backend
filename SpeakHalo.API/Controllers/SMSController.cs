@@ -52,10 +52,10 @@ public class SMSController : ControllerBase
     }
 
     [HttpGet("conversations")]
-    public async Task<IActionResult> GetConversations([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 50, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetConversations([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 50, [FromQuery] string? search = null, CancellationToken cancellationToken = default)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var result = await _smsService.GetUserConversationsAsync(userId, pageNumber, pageSize, cancellationToken);
+        var result = await _smsService.GetUserConversationsAsync(userId, pageNumber, pageSize, search, cancellationToken);
 
         if (!result.IsSuccess)
             return BadRequest(result);
@@ -93,6 +93,26 @@ public class SMSController : ControllerBase
             return NotFound(result);
 
         return Ok(result);
+    }
+
+    [HttpDelete("conversations/{conversationId}")]
+    public async Task<IActionResult> DeleteConversation(string conversationId, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+        if (!await UserOwnsConversationAsync(conversationId, userId))
+            return NotFound(new { message = "Conversation not found." });
+
+        var messages = await _unitOfWork.SMSMessages.GetByConversationIdAsync(conversationId, cancellationToken);
+        _unitOfWork.Repository<SMSMessage>().HardDeleteRange(messages);
+
+        var conversation = await _unitOfWork.SMSConversations.GetByIdAsync(conversationId, cancellationToken);
+        if (conversation != null)
+            _unitOfWork.Repository<SMSConversation>().HardDelete(conversation);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { isSuccess = true, message = "Conversation deleted successfully." });
     }
 
     [HttpPost("conversations/{conversationId}/read")]

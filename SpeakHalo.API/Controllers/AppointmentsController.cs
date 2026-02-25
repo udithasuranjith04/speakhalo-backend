@@ -63,10 +63,10 @@ public class AppointmentsController : ControllerBase
     }
 
     [HttpGet("user")]
-    public async Task<IActionResult> GetUserAppointments([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetUserAppointments([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null, CancellationToken cancellationToken = default)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var result = await _appointmentService.GetUserAppointmentsAsync(userId, pageNumber, pageSize, cancellationToken);
+        var result = await _appointmentService.GetUserAppointmentsAsync(userId, pageNumber, pageSize, search, cancellationToken);
 
         if (!result.IsSuccess)
             return BadRequest(result);
@@ -102,6 +102,23 @@ public class AppointmentsController : ControllerBase
             return BadRequest(result);
 
         return Ok(result);
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteAppointment(string id, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        if (!await UserOwnsAppointmentAsync(id, userId))
+            return NotFound();
+
+        var appointment = await _unitOfWork.Repository<Appointment>().GetByIdAsync(id, cancellationToken);
+        if (appointment == null)
+            return NotFound();
+
+        _unitOfWork.Repository<Appointment>().HardDelete(appointment);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { isSuccess = true, message = "Appointment deleted successfully." });
     }
 
     [HttpGet("user/date-range")]

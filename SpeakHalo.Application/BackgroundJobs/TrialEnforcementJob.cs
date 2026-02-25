@@ -15,6 +15,7 @@ public class TrialEnforcementJob
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IEmailService _emailService;
+    private readonly IAdminNotificationService _adminNotifications;
     private readonly IDistributedCache _cache;
     private readonly ILogger<TrialEnforcementJob> _logger;
     private readonly string _supportEmail;
@@ -22,12 +23,14 @@ public class TrialEnforcementJob
     public TrialEnforcementJob(
         IUnitOfWork unitOfWork,
         IEmailService emailService,
+        IAdminNotificationService adminNotifications,
         IDistributedCache cache,
         IConfiguration configuration,
         ILogger<TrialEnforcementJob> logger)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
+        _adminNotifications = adminNotifications;
         _cache = cache;
         _logger = logger;
         _supportEmail = configuration["SendGrid:SupportEmail"] ?? "support@speakhalo.com";
@@ -181,6 +184,10 @@ public class TrialEnforcementJob
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+                // Notify admins about expiring trial
+                if (subscription.TrialEndsAt.HasValue)
+                    _ = _adminNotifications.NotifyTrialExpiringAsync(subscription.UserId, user.Email, subscription.TrialEndsAt.Value);
+
                 warningCount++;
             }
             catch (OperationCanceledException)
@@ -191,6 +198,63 @@ public class TrialEnforcementJob
             {
                 failedCount++;
                 _logger.LogError(ex, "Failed to send trial warning for user {UserId}", subscription.UserId);
+            }
+        }
+
+        // 7-day warning pass: users with 4–7 days remaining who haven't been warned in the last 5 days
+        var sevenDayCutoff = now.AddDays(7);
+
+        var sevenDaySubscriptions = await _unitOfWork.Repository<UserSubscription>()
+            .FindAsync(s => s.IsOnTrial && s.TrialEndsAt != null
+                && s.TrialEndsAt > now.AddDays(3) && s.TrialEndsAt <= sevenDayCutoff, cancellationToken);
+
+        foreach (var subscription in sevenDaySubscriptions)
+        {
+            try
+            {
+                var trials = await _unitOfWork.Repository<UserTrial>()
+                    .FindAsync(t => t.UserId == subscription.UserId, cancellationToken);
+
+                var trial = trials.FirstOrDefault();
+                if (trial == null) continue;
+
+                // Skip if already warned within last 5 days
+                if (trial.LastExpirationWarningAt.HasValue && trial.LastExpirationWarningAt.Value > now.AddDays(-5))
+                    continue;
+
+                var user = await _unitOfWork.Users.GetByIdAsync(subscription.UserId, cancellationToken);
+                if (user == null) continue;
+
+                var html = BuildTrialWarningEmail(user.Name, user.BusinessName, 7);
+                var emailResult = await _emailService.SendEmailAsync(
+                    user.Email,
+                    "Your SpeakHalo trial ends in 7 days",
+                    html,
+                    cancellationToken: cancellationToken);
+
+                if (!emailResult.IsSuccess)
+                {
+                    _logger.LogWarning("Failed to send 7-day trial warning email to {Email}: {Errors}",
+                        user.Email, string.Join(", ", emailResult.Errors));
+                    continue;
+                }
+
+                trial.LastExpirationWarningAt = now;
+                trial.LastWarningDaysRemaining = 7;
+                _unitOfWork.Repository<UserTrial>().Update(trial);
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                warningCount++;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failedCount++;
+                _logger.LogError(ex, "Failed to send 7-day trial warning for user {UserId}", subscription.UserId);
             }
         }
 

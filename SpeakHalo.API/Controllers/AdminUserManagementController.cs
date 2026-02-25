@@ -27,6 +27,7 @@ public class AdminUserManagementController : ControllerBase
     private readonly ILogger<AdminUserManagementController> _logger;
     private readonly IEmailService _emailService;
     private readonly IAuditLogService _auditLogService;
+    private readonly IAdminNotificationService _adminNotifications;
     private readonly IDistributedCache _cache;
     private readonly string _frontendBaseUrl;
     private readonly string _supportEmail;
@@ -48,6 +49,7 @@ public class AdminUserManagementController : ControllerBase
         ILogger<AdminUserManagementController> logger,
         IEmailService emailService,
         IAuditLogService auditLogService,
+        IAdminNotificationService adminNotifications,
         IDistributedCache cache,
         IConfiguration configuration)
     {
@@ -55,19 +57,42 @@ public class AdminUserManagementController : ControllerBase
         _logger = logger;
         _emailService = emailService;
         _auditLogService = auditLogService;
+        _adminNotifications = adminNotifications;
         _cache = cache;
         _frontendBaseUrl = configuration["Frontend:BaseUrl"]?.TrimEnd('/') ?? "https://app.speakhalo.com";
         _supportEmail = configuration["SendGrid:SupportEmail"] ?? "support@speakhalo.com";
     }
 
     /// <summary>
-    /// List all users with subscription and usage info
+    /// List all users with subscription and usage info. Supports search and pagination.
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> ListUsers(CancellationToken cancellationToken = default)
+    public async Task<IActionResult> ListUsers(
+        [FromQuery] string? search = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        [FromQuery] string? role = null,
+        [FromQuery] string? status = null,
+        CancellationToken cancellationToken = default)
     {
         var users = await _unitOfWork.Repository<User>()
             .FindAsync(u => !u.IsDeleted, cancellationToken);
+
+        // Apply search filter
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var q = search.Trim().ToLower();
+            users = users.Where(u =>
+                (u.Email != null && u.Email.ToLower().Contains(q)) ||
+                (u.Name != null && u.Name.ToLower().Contains(q))
+            ).ToList();
+        }
+
+        // Apply role filter
+        if (!string.IsNullOrWhiteSpace(role) && Enum.TryParse<UserRole>(role, true, out var roleEnum))
+        {
+            users = users.Where(u => u.Role == roleEnum).ToList();
+        }
 
         var userIds = users.Select(u => u.Id).ToList();
 
@@ -80,7 +105,34 @@ public class AdminUserManagementController : ControllerBase
             .FindAsync(a => userIds.Contains(a.UserId), cancellationToken);
         var authsByUserId = allAuths.ToDictionary(a => a.UserId);
 
-        var userList = users.OrderByDescending(u => u.CreatedAt).Select(user =>
+        var orderedUsers = users.OrderByDescending(u => u.CreatedAt).ToList();
+
+        // Apply status filter (requires subscription data)
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            orderedUsers = status.ToLower() switch
+            {
+                "active" => orderedUsers.Where(u => u.IsActive && (!subsByUserId.TryGetValue(u.Id, out var s) || !s.IsTemporarilySuspended)).ToList(),
+                "suspended" => orderedUsers.Where(u => subsByUserId.TryGetValue(u.Id, out var s) && s.IsTemporarilySuspended).ToList(),
+                "trial" => orderedUsers.Where(u => subsByUserId.TryGetValue(u.Id, out var s) && s.IsOnTrial).ToList(),
+                "inactive" => orderedUsers.Where(u => !u.IsActive).ToList(),
+                _ => orderedUsers
+            };
+        }
+
+        var totalCount = orderedUsers.Count;
+
+        // Paginate
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 50;
+        if (pageSize > 200) pageSize = 200;
+
+        var paginatedUsers = orderedUsers
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var items = paginatedUsers.Select(user =>
         {
             subsByUserId.TryGetValue(user.Id, out var sub);
             authsByUserId.TryGetValue(user.Id, out var auth);
@@ -118,7 +170,14 @@ public class AdminUserManagementController : ControllerBase
             };
         }).ToList();
 
-        return Ok(userList);
+        return Ok(new
+        {
+            items,
+            totalCount,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)totalCount / pageSize)
+        });
     }
 
     /// <summary>
@@ -523,6 +582,9 @@ public class AdminUserManagementController : ControllerBase
         {
             _logger.LogError(ex, "Failed to send welcome email to {Email}", user.Email);
         }
+
+        // Notify admins in real-time
+        _ = _adminNotifications.NotifyNewUserSignupAsync(user.Id, user.Email, request.Name);
 
         return Ok(new
         {
@@ -1045,6 +1107,9 @@ public class AdminUserManagementController : ControllerBase
             ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown",
             userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
 
+        // Notify admins in real-time
+        _ = _adminNotifications.NotifyUserDeletedAsync(userId, user.Email, adminId);
+
         return Ok(new
         {
             message = "User deleted successfully",
@@ -1215,6 +1280,13 @@ public class AdminUserManagementController : ControllerBase
         var action = request.Suspend ? "suspended" : "unsuspended";
         _logger.LogInformation("Admin {AdminId} {Action} user {UserId}", adminId, action, userId);
 
+        // Notify admins in real-time
+        var targetUser = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        if (request.Suspend)
+            _ = _adminNotifications.NotifyUserSuspendedAsync(userId, targetUser?.Email ?? userId, request.Reason, adminId);
+        else
+            _ = _adminNotifications.NotifyUserActivatedAsync(userId, targetUser?.Email ?? userId, adminId);
+
         return Ok(new { message = $"User {action} successfully", userId });
     }
 
@@ -1246,6 +1318,10 @@ public class AdminUserManagementController : ControllerBase
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Admin {AdminId} activated user {UserId}", adminId, userId);
+
+        // Notify admins in real-time
+        var activatedUser = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        _ = _adminNotifications.NotifyUserActivatedAsync(userId, activatedUser?.Email ?? userId, adminId);
 
         return Ok(new { message = "User activated successfully", userId });
     }
@@ -1282,6 +1358,174 @@ public class AdminUserManagementController : ControllerBase
         _logger.LogInformation("Admin {AdminId} reset usage for user {UserId}", adminId, userId);
 
         return Ok(new { message = "Usage counters reset successfully", userId });
+    }
+
+    /// <summary>
+    /// Get a user's billing details including Paddle info.
+    /// </summary>
+    [HttpGet("{userId}/billing")]
+    public async Task<IActionResult> GetUserBilling(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        if (user == null || user.IsDeleted)
+            return NotFound(new { error = "User not found" });
+
+        var subs = await _unitOfWork.Repository<UserSubscription>()
+            .FindAsync(s => s.UserId == userId, cancellationToken);
+        var sub = subs.FirstOrDefault();
+        if (sub == null)
+            return NotFound(new { error = "User subscription not found" });
+
+        string? planName = null;
+        decimal? planPrice = null;
+        if (!string.IsNullOrEmpty(sub.PricingPlanId))
+        {
+            var plan = await _unitOfWork.Repository<PricingPlan>()
+                .GetByIdAsync(sub.PricingPlanId, cancellationToken);
+            if (plan != null)
+            {
+                planName = plan.Name;
+                planPrice = plan.DisplayPrice;
+            }
+        }
+
+        var refundEligible = sub.FirstPaymentAt.HasValue
+            && !sub.RefundedAt.HasValue
+            && (DateTime.UtcNow - sub.FirstPaymentAt.Value).TotalDays <= 14;
+
+        return Ok(new
+        {
+            userId,
+            planName,
+            planPrice,
+            sub.PaddleCustomerId,
+            sub.PaddleSubscriptionId,
+            sub.PaddleSubscriptionStatus,
+            sub.PaddlePriceId,
+            sub.HasActivePayment,
+            sub.IsOnTrial,
+            sub.TrialEndsAt,
+            sub.FirstPaymentAt,
+            sub.PaddleSubscriptionCreatedAt,
+            sub.PaddleCanceledAt,
+            sub.PaddleCurrentPeriodEnd,
+            sub.RefundedAt,
+            sub.RefundReason,
+            refundEligible,
+            sub.BillingCycleStartDate,
+            sub.NextBillingDate
+        });
+    }
+
+    /// <summary>
+    /// Admin cancels a user's Paddle subscription.
+    /// </summary>
+    [HttpPost("{userId}/cancel-subscription")]
+    public async Task<IActionResult> AdminCancelSubscription(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var adminId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(adminId))
+            return Unauthorized();
+
+        var subs = await _unitOfWork.Repository<UserSubscription>()
+            .FindAsync(s => s.UserId == userId, cancellationToken);
+        var sub = subs.FirstOrDefault();
+        if (sub == null)
+            return NotFound(new { error = "User subscription not found" });
+
+        if (!string.IsNullOrEmpty(sub.PaddleSubscriptionId))
+        {
+            var paddleService = HttpContext.RequestServices.GetRequiredService<IPaddleService>();
+            var cancelResult = await paddleService.CancelSubscriptionAsync(sub.PaddleSubscriptionId, true, cancellationToken);
+            if (!cancelResult.IsSuccess)
+            {
+                _logger.LogWarning("Failed to cancel Paddle subscription for user {UserId}: {Error}",
+                    userId, cancelResult.Errors.FirstOrDefault());
+            }
+        }
+
+        sub.HasActivePayment = false;
+        sub.PaddleSubscriptionStatus = "canceled";
+        sub.PaddleCanceledAt = DateTime.UtcNow;
+        _unitOfWork.Repository<UserSubscription>().Update(sub);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Admin {AdminId} canceled subscription for user {UserId}", adminId, userId);
+
+        await _auditLogService.LogActionAsync(
+            userId: adminId,
+            action: "SUBSCRIPTION_CANCELED",
+            entityType: "UserSubscription",
+            entityId: userId,
+            oldValues: null,
+            newValues: $"{{\"canceledBy\":\"admin\",\"adminId\":\"{adminId}\"}}",
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown",
+            userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
+
+        return Ok(new { message = "Subscription canceled successfully" });
+    }
+
+    /// <summary>
+    /// Admin issues a refund for a user (within 14-day window).
+    /// </summary>
+    [HttpPost("{userId}/refund")]
+    public async Task<IActionResult> AdminRefundUser(
+        string userId,
+        [FromBody] SpeakHalo.Application.DTOs.Payment.AdminRefundRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var adminId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(adminId))
+            return Unauthorized();
+
+        var subs = await _unitOfWork.Repository<UserSubscription>()
+            .FindAsync(s => s.UserId == userId, cancellationToken);
+        var sub = subs.FirstOrDefault();
+        if (sub == null)
+            return NotFound(new { error = "User subscription not found" });
+
+        if (!sub.FirstPaymentAt.HasValue)
+            return BadRequest(new { error = "No payment found to refund" });
+
+        if (sub.RefundedAt.HasValue)
+            return BadRequest(new { error = "Already refunded" });
+
+        if ((DateTime.UtcNow - sub.FirstPaymentAt.Value).TotalDays > 14)
+            return BadRequest(new { error = "Refund window (14 days) has expired" });
+
+        // Mark as refunded and cancel
+        sub.RefundedAt = DateTime.UtcNow;
+        sub.RefundReason = request.Reason;
+        sub.HasActivePayment = false;
+        sub.PaddleSubscriptionStatus = "canceled";
+        sub.PaddleCanceledAt = DateTime.UtcNow;
+        _unitOfWork.Repository<UserSubscription>().Update(sub);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Cancel Paddle subscription if exists
+        if (!string.IsNullOrEmpty(sub.PaddleSubscriptionId))
+        {
+            var paddleService = HttpContext.RequestServices.GetRequiredService<IPaddleService>();
+            await paddleService.CancelSubscriptionAsync(sub.PaddleSubscriptionId, true, cancellationToken);
+        }
+
+        _logger.LogInformation("Admin {AdminId} issued refund for user {UserId}: {Reason}", adminId, userId, request.Reason);
+
+        await _auditLogService.LogActionAsync(
+            userId: adminId,
+            action: "REFUND_ISSUED",
+            entityType: "UserSubscription",
+            entityId: userId,
+            oldValues: null,
+            newValues: $"{{\"reason\":\"{request.Reason}\",\"adminId\":\"{adminId}\"}}",
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown",
+            userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
+
+        return Ok(new { message = "Refund processed successfully" });
     }
 
     private static string GenerateRandomPassword()

@@ -63,6 +63,10 @@ public class WhatsAppService : IWhatsAppService
                 conversation = await GetOrCreateWhatsAppConversationAsync(request.UserId, businessPhone, customerPhone, request.CustomerId, cancellationToken);
             }
 
+            // Hard-limit check: Starter users are blocked when their monthly WhatsApp quota is exhausted
+            if (await _usageTracking.IsHardLimitBlockedAsync(request.UserId, UsageType.WhatsAppMessages))
+                return Result<WhatsAppMessageResponse>.Failure("Monthly WhatsApp limit reached. Upgrade to Professional or Business to continue sending messages.");
+
             var twilioResult = await _twilioService.SendWhatsAppMessageAsync(customerPhone, businessPhone, request.Content, cancellationToken);
             if (!twilioResult.IsSuccess)
                 return Result<WhatsAppMessageResponse>.Failure(twilioResult.Errors);
@@ -148,11 +152,20 @@ public class WhatsAppService : IWhatsAppService
         }
     }
 
-    public async Task<Result<PaginatedList<WhatsAppConversationResponse>>> GetUserConversationsAsync(string userId, int pageNumber = 1, int pageSize = 20, CancellationToken cancellationToken = default)
+    public async Task<Result<PaginatedList<WhatsAppConversationResponse>>> GetUserConversationsAsync(string userId, int pageNumber = 1, int pageSize = 20, string? search = null, CancellationToken cancellationToken = default)
     {
         try
         {
             var conversations = await _unitOfWork.WhatsAppConversations.GetByUserIdAsync(userId, cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim();
+                conversations = conversations.Where(c =>
+                    (c.CustomerName != null && c.CustomerName.Contains(s, StringComparison.OrdinalIgnoreCase)) ||
+                    (c.CustomerPhone != null && c.CustomerPhone.Contains(s, StringComparison.OrdinalIgnoreCase))
+                ).ToList();
+            }
 
             var paginatedConversations = await conversations
                 .AsQueryable()

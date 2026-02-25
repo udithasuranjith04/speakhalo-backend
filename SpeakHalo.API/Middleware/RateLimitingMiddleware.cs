@@ -29,6 +29,7 @@ public class RateLimitingMiddleware
         { "/api/v1/auth/refresh", 10 },                    // Token refresh
         { "/api/v1/auth/revoke-token", 5 },                // Token revocation
         { "/api/v1/admin/trials/request", 2 },             // Trial requests
+        { "/api/v1/subscriptions/trial-invite/validate", 10 }, // Trial invite validation (public endpoint)
     };
 
     static RateLimitingMiddleware()

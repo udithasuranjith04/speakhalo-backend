@@ -2494,6 +2494,9 @@ namespace SpeakHalo.Infrastructure.Migrations
                     b.Property<int>("AIMinutesIncluded")
                         .HasColumnType("integer");
 
+                    b.Property<decimal>("AIOverageRate")
+                        .HasColumnType("numeric");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2516,6 +2519,9 @@ namespace SpeakHalo.Infrastructure.Migrations
                     b.Property<bool>("EnforceHardLimits")
                         .HasColumnType("boolean");
 
+                    b.Property<decimal>("ImageOverageRate")
+                        .HasColumnType("numeric");
+
                     b.Property<int>("ImagesIncluded")
                         .HasColumnType("integer");
 
@@ -2535,13 +2541,28 @@ namespace SpeakHalo.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("PaddlePriceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("PaddleProductId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<int>("SMSMessagesIncluded")
                         .HasColumnType("integer");
+
+                    b.Property<decimal>("SMSOverageRate")
+                        .HasColumnType("numeric");
 
                     b.Property<int>("SortOrder")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(0);
+
+                    b.Property<string>("TierSlug")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
 
                     b.Property<int>("TrialDays")
                         .HasColumnType("integer");
@@ -2552,10 +2573,17 @@ namespace SpeakHalo.Infrastructure.Migrations
                     b.Property<int>("WhatsAppMessagesIncluded")
                         .HasColumnType("integer");
 
+                    b.Property<decimal>("WhatsAppOverageRate")
+                        .HasColumnType("numeric");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Name")
                         .IsUnique();
+
+                    b.HasIndex("TierSlug")
+                        .IsUnique()
+                        .HasFilter("\"TierSlug\" IS NOT NULL");
 
                     b.ToTable("PricingPlans");
                 });
@@ -3359,6 +3387,79 @@ namespace SpeakHalo.Infrastructure.Migrations
                     b.HasIndex("CallId");
 
                     b.ToTable("TranscriptEntries");
+                });
+
+            modelBuilder.Entity("SpeakHalo.Domain.Entities.TrialInvite", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedByAdminId")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsRedeemed")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("PricingPlanId")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<DateTime?>("RedeemedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RedeemedByUserId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("TrialDays")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("IsRedeemed");
+
+                    b.HasIndex("PricingPlanId");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.ToTable("TrialInvites");
                 });
 
             modelBuilder.Entity("SpeakHalo.Domain.Entities.UsageCosts", b =>
@@ -4206,6 +4307,9 @@ namespace SpeakHalo.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true);
 
+                    b.Property<DateTime?>("FirstPaymentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int?>("FounderNumber")
                         .HasColumnType("integer");
 
@@ -4254,6 +4358,39 @@ namespace SpeakHalo.Infrastructure.Migrations
                     b.Property<decimal>("OverageChargesThisMonth")
                         .HasColumnType("numeric");
 
+                    b.Property<string>("PaddleCancelUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("PaddleCanceledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("PaddleCurrentPeriodEnd")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaddleCustomerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("PaddlePriceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("PaddleSubscriptionCreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaddleSubscriptionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("PaddleSubscriptionStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("PaddleUpdatePaymentMethodUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
                     b.Property<string>("Plan")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -4269,6 +4406,13 @@ namespace SpeakHalo.Infrastructure.Migrations
 
                     b.Property<string>("PricingPlanId")
                         .HasColumnType("text");
+
+                    b.Property<string>("RefundReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("RefundedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("RequiresPayment")
                         .HasColumnType("boolean");
@@ -4339,6 +4483,10 @@ namespace SpeakHalo.Infrastructure.Migrations
                         .HasColumnType("numeric");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PaddleCustomerId");
+
+                    b.HasIndex("PaddleSubscriptionId");
 
                     b.HasIndex("Plan");
 
@@ -5419,6 +5567,17 @@ namespace SpeakHalo.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Call");
+                });
+
+            modelBuilder.Entity("SpeakHalo.Domain.Entities.TrialInvite", b =>
+                {
+                    b.HasOne("SpeakHalo.Domain.Entities.PricingPlan", "PricingPlan")
+                        .WithMany()
+                        .HasForeignKey("PricingPlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PricingPlan");
                 });
 
             modelBuilder.Entity("SpeakHalo.Domain.Entities.UsageCosts", b =>

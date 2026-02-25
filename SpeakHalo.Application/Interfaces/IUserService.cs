@@ -12,4 +12,5 @@ public interface IUserService
     Task<Result<bool>> UpdatePasswordAsync(string userId, string currentPassword, string newPassword, CancellationToken cancellationToken = default);
     Task<Result<bool>> DeactivateUserAsync(string userId, CancellationToken cancellationToken = default);
     Task<Result<PaginatedList<UserResponse>>> GetAllUsersAsync(int pageNumber = 1, int pageSize = 10, CancellationToken cancellationToken = default);
+    Task<Result<bool>> UpdateOnboardingAsync(string userId, UpdateOnboardingRequest request, CancellationToken cancellationToken = default);
 }

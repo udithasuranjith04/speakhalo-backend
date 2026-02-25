@@ -52,6 +52,10 @@ public class SMSConversationService : ISMSConversationService
                 conversation = await GetOrCreateSMSConversationAsync(request.UserId, businessPhone, request.ToNumber, request.CustomerId, cancellationToken);
             }
 
+            // Hard-limit check: Starter users are blocked when their monthly SMS quota is exhausted
+            if (await _usageTracking.IsHardLimitBlockedAsync(request.UserId, UsageType.SMSMessages))
+                return Result<SMSMessageResponse>.Failure("Monthly SMS limit reached. Upgrade to Professional or Business to continue sending messages.");
+
             var twilioResult = await _twilioService.SendSmsAsync(request.ToNumber, businessPhone, request.Content, cancellationToken);
             if (!twilioResult.IsSuccess)
                 return Result<SMSMessageResponse>.Failure(twilioResult.Errors);
@@ -133,11 +137,19 @@ public class SMSConversationService : ISMSConversationService
         }
     }
 
-    public async Task<Result<PaginatedList<SMSConversationResponse>>> GetUserConversationsAsync(string userId, int pageNumber = 1, int pageSize = 20, CancellationToken cancellationToken = default)
+    public async Task<Result<PaginatedList<SMSConversationResponse>>> GetUserConversationsAsync(string userId, int pageNumber = 1, int pageSize = 20, string? search = null, CancellationToken cancellationToken = default)
     {
         try
         {
             var conversations = await _unitOfWork.SMSConversations.GetByUserIdAsync(userId, cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim();
+                conversations = conversations.Where(c =>
+                    (c.CustomerPhone != null && c.CustomerPhone.Contains(s, StringComparison.OrdinalIgnoreCase))
+                ).ToList();
+            }
 
             var paginatedConversations = await conversations
                 .AsQueryable()

@@ -38,6 +38,13 @@ public interface IUsageTrackingService
     Task<bool> HasRemainingQuotaAsync(string userId, UsageType usageType, int amount = 1);
 
     /// <summary>
+    /// Returns true when a hard-limit plan user has fully exhausted their monthly quota
+    /// and must be blocked from sending/using the service.
+    /// Always returns false for soft-limit (overage) plans.
+    /// </summary>
+    Task<bool> IsHardLimitBlockedAsync(string userId, UsageType usageType);
+
+    /// <summary>
     /// Reset monthly usage for all users (called by background job)
     /// </summary>
     Task ResetMonthlyUsageAsync();

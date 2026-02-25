@@ -140,6 +140,7 @@ builder.Services.AddScoped<IQuoteService, SpeakHalo.Application.Services.QuoteSe
 builder.Services.AddSingleton<IDisposableEmailValidator, SpeakHalo.Application.Services.DisposableEmailValidator>();
 builder.Services.AddScoped<IEmailVerificationService, SpeakHalo.Application.Services.EmailVerificationService>();
 builder.Services.AddScoped<INotificationService, SpeakHalo.Application.Services.NotificationService>();
+builder.Services.AddScoped<IAdminNotificationService, SpeakHalo.API.Services.AdminNotificationService>();
 builder.Services.AddScoped<IFeatureFlagService, SpeakHalo.Application.Services.FeatureFlagService>();
 builder.Services.AddSingleton<IFeatureGatingService, SpeakHalo.Application.Services.FeatureGatingService>();
 builder.Services.AddScoped<IApiKeyService, SpeakHalo.Application.Services.ApiKeyService>();
@@ -151,6 +152,15 @@ builder.Services.AddScoped<IInvoiceService, SpeakHalo.Application.Services.Invoi
 builder.Services.AddScoped<IServiceCatalogService, SpeakHalo.Application.Services.ServiceCatalogService>();
 builder.Services.AddScoped<ITeamService, SpeakHalo.Application.Services.TeamService>();
 builder.Services.AddScoped<ICallerRecognitionService, SpeakHalo.Application.Services.CallerRecognitionService>();
+
+builder.Services.Configure<SpeakHalo.Application.DTOs.Payment.PaddleSettings>(
+    builder.Configuration.GetSection("Paddle"));
+builder.Services.AddHttpClient<IPaddleService, SpeakHalo.Infrastructure.Services.PaddleService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddScoped<IPaddleWebhookService, SpeakHalo.Application.Services.PaddleWebhookService>();
+builder.Services.AddScoped<ITrialInviteService, SpeakHalo.Application.Services.TrialInviteService>();
 
 builder.Services.AddHttpClient<IGeocodingService, NominatimGeocodingService>(client =>
 {
@@ -643,6 +653,11 @@ RecurringJob.AddOrUpdate<SpeakHalo.Application.BackgroundJobs.MediaProcessingJob
     job => job.CleanupOldMediaAsync(CancellationToken.None),
     Cron.Daily);
 
+RecurringJob.AddOrUpdate<SpeakHalo.Application.BackgroundJobs.DataCleanupJob>(
+    "cleanup-expired-invites",
+    job => job.CleanupExpiredInvitesAsync(CancellationToken.None),
+    Cron.Daily);
+
 RecurringJob.AddOrUpdate<SpeakHalo.Application.BackgroundJobs.TrialEnforcementJob>(
     "expire-trials",
     job => job.ExpireTrialsAsync(CancellationToken.None),
@@ -705,6 +720,27 @@ if (app.Environment.IsDevelopment() || args.Contains("--seed"))
         {
             Log.Warning(ex, "Knowledge templates may already be seeded or seeding failed");
         }
+    }
+}
+
+// ── Always-run: sync pricing plans from code → database (all environments) ──────────
+// Pricing plans are defined in DatabaseSeeder.SeedPricingPlansAsync and must stay
+// consistent with the code. This runs on every startup so any plan changes take effect
+// immediately without manual SQL. Orphaned plans (old slugs) are deactivated automatically.
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        Log.Information("🌱 Syncing pricing plans...");
+        var pricingContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var pricingLogger = scope.ServiceProvider.GetRequiredService<ILogger<SpeakHalo.Infrastructure.Data.DatabaseSeeder>>();
+        var pricingSeeder = new SpeakHalo.Infrastructure.Data.DatabaseSeeder(pricingContext, pricingLogger);
+        await pricingSeeder.SeedPricingPlansAsync();
+        Log.Information("✅ Pricing plans synced successfully");
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "❌ Pricing plan sync failed — plans may be out of date");
     }
 }
 

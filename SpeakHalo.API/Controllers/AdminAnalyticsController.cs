@@ -322,6 +322,77 @@ public class AdminAnalyticsController : ControllerBase
     }
 
     /// <summary>
+    /// Get geographic distribution of users by phone number country code
+    /// </summary>
+    [HttpGet("geographic")]
+    public async Task<IActionResult> GetGeographicDistribution(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var countryNames = new Dictionary<string, string>
+            {
+                ["US"] = "United States", ["GB"] = "United Kingdom", ["CA"] = "Canada",
+                ["AU"] = "Australia", ["DE"] = "Germany", ["FR"] = "France",
+                ["ES"] = "Spain", ["IT"] = "Italy", ["NL"] = "Netherlands",
+                ["BR"] = "Brazil", ["MX"] = "Mexico", ["IN"] = "India",
+                ["JP"] = "Japan", ["KR"] = "South Korea", ["SG"] = "Singapore",
+                ["HK"] = "Hong Kong", ["IL"] = "Israel", ["SE"] = "Sweden",
+                ["NO"] = "Norway", ["DK"] = "Denmark", ["FI"] = "Finland",
+                ["IE"] = "Ireland", ["NZ"] = "New Zealand", ["ZA"] = "South Africa",
+                ["AE"] = "United Arab Emirates", ["CH"] = "Switzerland",
+                ["AT"] = "Austria", ["BE"] = "Belgium", ["PT"] = "Portugal",
+                ["PL"] = "Poland",
+            };
+
+            var usersByCountry = await _context.PhoneNumbers
+                .Where(p => p.IsActive)
+                .GroupBy(p => p.CountryCode)
+                .Select(g => new
+                {
+                    CountryCode = g.Key,
+                    UserCount = g.Select(p => p.UserId).Distinct().Count()
+                })
+                .ToListAsync(cancellationToken);
+
+            var callsByCountry = await _context.Calls
+                .Where(c => c.PhoneNumberId != null)
+                .Join(
+                    _context.PhoneNumbers,
+                    c => c.PhoneNumberId,
+                    p => p.Id,
+                    (c, p) => p.CountryCode
+                )
+                .GroupBy(cc => cc)
+                .Select(g => new
+                {
+                    CountryCode = g.Key,
+                    CallCount = g.Count()
+                })
+                .ToListAsync(cancellationToken);
+
+            var callsLookup = callsByCountry.ToDictionary(c => c.CountryCode, c => c.CallCount);
+
+            var result = usersByCountry
+                .Select(u => new
+                {
+                    countryCode = u.CountryCode,
+                    countryName = countryNames.GetValueOrDefault(u.CountryCode, u.CountryCode),
+                    userCount = u.UserCount,
+                    callCount = callsLookup.GetValueOrDefault(u.CountryCode, 0)
+                })
+                .OrderByDescending(x => x.userCount)
+                .ToList();
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving geographic distribution");
+            return StatusCode(500, new { message = "Error retrieving geographic distribution", error = "An unexpected error occurred. Please try again." });
+        }
+    }
+
+    /// <summary>
     /// Get comprehensive churn analytics with monthly trends and breakdown
     /// </summary>
     [HttpGet("churn")]

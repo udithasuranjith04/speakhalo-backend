@@ -56,10 +56,10 @@ public class WhatsAppController : ControllerBase
     }
 
     [HttpGet("conversations")]
-    public async Task<IActionResult> GetConversations([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetConversations([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, CancellationToken cancellationToken = default)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var result = await _whatsAppService.GetUserConversationsAsync(userId, pageNumber, pageSize, cancellationToken);
+        var result = await _whatsAppService.GetUserConversationsAsync(userId, pageNumber, pageSize, search, cancellationToken);
 
         if (!result.IsSuccess)
             return BadRequest(result);
@@ -129,6 +129,26 @@ public class WhatsAppController : ControllerBase
             return BadRequest(result);
 
         return Ok(result);
+    }
+
+    [HttpDelete("conversations/{conversationId}")]
+    public async Task<IActionResult> DeleteConversation(string conversationId, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+        if (!await UserOwnsConversationAsync(conversationId, userId))
+            return NotFound(new { message = "Conversation not found." });
+
+        var messages = await _unitOfWork.WhatsAppMessages.GetByConversationIdAsync(conversationId, cancellationToken: cancellationToken);
+        _unitOfWork.Repository<WhatsAppMessage>().HardDeleteRange(messages);
+
+        var conversation = await _unitOfWork.WhatsAppConversations.GetByIdAsync(conversationId, cancellationToken);
+        if (conversation != null)
+            _unitOfWork.Repository<WhatsAppConversation>().HardDelete(conversation);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { isSuccess = true, message = "Conversation deleted successfully." });
     }
 
     [HttpPost("webhook")]

@@ -75,6 +75,41 @@ public class DataCleanupJob
         }
     }
 
+    public async Task CleanupExpiredInvitesAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Starting expired invite cleanup");
+
+        try
+        {
+            // Soft-delete unredeemed invites that expired more than 30 days ago
+            var cutoff = DateTime.UtcNow.AddDays(-30);
+
+            var stale = await _unitOfWork.Repository<TrialInvite>()
+                .FindAsync(i => !i.IsDeleted && !i.IsRedeemed && i.ExpiresAt < cutoff, cancellationToken);
+
+            foreach (var invite in stale)
+            {
+                invite.IsDeleted = true;
+                invite.DeletedAt = DateTime.UtcNow;
+                invite.DeletedBy = "system:cleanup";
+                _unitOfWork.Repository<TrialInvite>().Update(invite);
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation("Soft-deleted {Count} stale unredeemed invites", stale.Count());
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Expired invite cleanup job cancelled");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error cleaning up expired invites");
+        }
+    }
+
     public async Task CleanupFailedCallsAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Cleaning up old failed/incomplete calls");

@@ -85,6 +85,20 @@ public class UserSubscription : BaseEntity
     public DateTime? TrialEndsAt { get; set; }
     public bool IsOnTrial { get; set; } = false;
 
+    // Paddle Billing fields
+    public string? PaddleCustomerId { get; set; }
+    public string? PaddleSubscriptionId { get; set; }
+    public string? PaddlePriceId { get; set; }
+    public string? PaddleSubscriptionStatus { get; set; }
+    public DateTime? PaddleSubscriptionCreatedAt { get; set; }
+    public DateTime? PaddleCanceledAt { get; set; }
+    public DateTime? PaddleCurrentPeriodEnd { get; set; }
+    public string? PaddleUpdatePaymentMethodUrl { get; set; }
+    public string? PaddleCancelUrl { get; set; }
+    public DateTime? FirstPaymentAt { get; set; }
+    public DateTime? RefundedAt { get; set; }
+    public string? RefundReason { get; set; }
+
     public uint RowVersion { get; set; }
 
     public virtual User User { get; set; } = null!;

@@ -94,6 +94,9 @@ public class ApplicationDbContext : DbContext
     // Service Catalog
     public DbSet<ServiceCatalogItem> ServiceCatalogItems => Set<ServiceCatalogItem>();
 
+    // Trial Invites
+    public DbSet<TrialInvite> TrialInvites => Set<TrialInvite>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -190,6 +193,29 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.EnabledFeatures).HasColumnType("jsonb");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.SortOrder).HasDefaultValue(0);
+            entity.Property(e => e.PaddleProductId).HasMaxLength(100);
+            entity.Property(e => e.PaddlePriceId).HasMaxLength(100);
+            entity.Property(e => e.TierSlug).HasMaxLength(50);
+            entity.HasIndex(e => e.TierSlug).IsUnique().HasFilter("\"TierSlug\" IS NOT NULL");
+        });
+
+        // Configure TrialInvite
+        modelBuilder.Entity<TrialInvite>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Token).IsUnique();
+            entity.Property(e => e.Token).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.Email).HasMaxLength(255);
+            entity.Property(e => e.PricingPlanId).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.CreatedByAdminId).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.RedeemedByUserId).HasMaxLength(255);
+            entity.Property(e => e.Notes).HasMaxLength(1000);
+            entity.HasIndex(e => e.ExpiresAt);
+            entity.HasIndex(e => e.IsRedeemed);
+            entity.HasOne(e => e.PricingPlan)
+                .WithMany()
+                .HasForeignKey(e => e.PricingPlanId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // Configure UserSubscription (One-to-One with User)
@@ -210,6 +236,16 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.RolloverExpiresAt);
             // Pricing Plan FK
             entity.HasIndex(e => e.PricingPlanId);
+            // Paddle fields
+            entity.Property(e => e.PaddleCustomerId).HasMaxLength(100);
+            entity.Property(e => e.PaddleSubscriptionId).HasMaxLength(100);
+            entity.Property(e => e.PaddlePriceId).HasMaxLength(100);
+            entity.Property(e => e.PaddleSubscriptionStatus).HasMaxLength(50);
+            entity.Property(e => e.PaddleUpdatePaymentMethodUrl).HasMaxLength(2000);
+            entity.Property(e => e.PaddleCancelUrl).HasMaxLength(2000);
+            entity.Property(e => e.RefundReason).HasMaxLength(1000);
+            entity.HasIndex(e => e.PaddleCustomerId);
+            entity.HasIndex(e => e.PaddleSubscriptionId);
             entity.HasOne(e => e.PricingPlan)
                 .WithMany()
                 .HasForeignKey(e => e.PricingPlanId)

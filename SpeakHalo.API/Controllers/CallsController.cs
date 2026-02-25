@@ -43,6 +43,10 @@ public class CallsController : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
+        // Hard-limit check: Starter users are blocked when their monthly AI minutes quota is exhausted
+        if (await _usageTracking.IsHardLimitBlockedAsync(userId, UsageType.AIMinutes))
+            return BadRequest(new { isSuccess = false, message = "Monthly AI voice minutes limit reached. Upgrade to Professional or Business to continue." });
+
         // Override the UserId from the request body with the authenticated user's ID
         var securedRequest = request with { UserId = userId };
 
@@ -94,6 +98,23 @@ public class CallsController : ControllerBase
             return BadRequest(result);
 
         return Ok(result);
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> DeleteCall(string id, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        if (!await UserOwnsCallAsync(id, userId))
+            return NotFound(new { error = "Call not found" });
+
+        var call = await _unitOfWork.Repository<Call>().GetByIdAsync(id, cancellationToken);
+        if (call == null)
+            return NotFound(new { error = "Call not found" });
+
+        _unitOfWork.Repository<Call>().HardDelete(call);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { isSuccess = true, message = "Call deleted successfully." });
     }
 
     [HttpPost("{id:guid}/end")]

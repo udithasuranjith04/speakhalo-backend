@@ -33,4 +33,17 @@ public class PricingPlan : BaseEntity
 
     /// <summary>Display ordering in plan selection UI.</summary>
     public int SortOrder { get; set; } = 0;
+
+    // Paddle Billing integration
+    public string? PaddleProductId { get; set; }
+    public string? PaddlePriceId { get; set; }
+
+    /// <summary>URL-friendly slug for tier identification (e.g. "starter", "professional", "business").</summary>
+    public string? TierSlug { get; set; }
+
+    // Overage rates per unit above included limits
+    public decimal AIOverageRate { get; set; } = 0m;
+    public decimal SMSOverageRate { get; set; } = 0m;
+    public decimal WhatsAppOverageRate { get; set; } = 0m;
+    public decimal ImageOverageRate { get; set; } = 0m;
 }

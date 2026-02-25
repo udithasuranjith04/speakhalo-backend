@@ -38,13 +38,17 @@ public class UsageTrackingService : IUsageTrackingService
         {
             await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
-            // Atomic increment + row-level lock via UPDATE
+            // Atomic increment + row-level lock via UPDATE.
+            // Overage charges are only calculated when EnforceHardLimits = false (Pro/Business).
+            // Starter (EnforceHardLimits = true) is never billed for overages.
             var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
                 @"UPDATE ""UserSubscriptions"" SET
                     ""AIMinutesUsedThisMonth"" = ""AIMinutesUsedThisMonth"" + {0},
                     ""OverageChargesThisMonth"" = ""OverageChargesThisMonth"" +
-                        GREATEST(0, (""AIMinutesUsedThisMonth"" + {0} - ""AIMinutesIncluded"") -
-                        GREATEST(0, ""AIMinutesUsedThisMonth"" - ""AIMinutesIncluded"")) * ""AIOverageRate""
+                        CASE WHEN ""EnforceHardLimits"" = false
+                            THEN GREATEST(0, (""AIMinutesUsedThisMonth"" + {0} - ""AIMinutesIncluded"") -
+                                GREATEST(0, ""AIMinutesUsedThisMonth"" - ""AIMinutesIncluded"")) * ""AIOverageRate""
+                            ELSE 0 END
                 WHERE ""UserId"" = {1}", minutesUsed, userId);
 
             if (rowsAffected == 0)
@@ -96,12 +100,14 @@ public class UsageTrackingService : IUsageTrackingService
 
             await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
-            // Atomic increment + row-level lock via UPDATE
+            // Atomic increment + row-level lock via UPDATE.
+            // Overage charges only apply when EnforceHardLimits = false (Pro/Business).
             var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
                 @"UPDATE ""UserSubscriptions"" SET
                     ""WhatsAppMessagesUsedThisMonth"" = ""WhatsAppMessagesUsedThisMonth"" + 1,
                     ""OverageChargesThisMonth"" = ""OverageChargesThisMonth"" +
-                        CASE WHEN ""WhatsAppMessagesUsedThisMonth"" + 1 > ""WhatsAppMessagesIncluded""
+                        CASE WHEN ""EnforceHardLimits"" = false
+                            AND ""WhatsAppMessagesUsedThisMonth"" + 1 > ""WhatsAppMessagesIncluded""
                             THEN {0} ELSE 0 END
                 WHERE ""UserId"" = {1}", whatsAppOverageRate, userId);
 
@@ -150,12 +156,14 @@ public class UsageTrackingService : IUsageTrackingService
 
             await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
-            // Atomic increment + row-level lock via UPDATE
+            // Atomic increment + row-level lock via UPDATE.
+            // Overage charges only apply when EnforceHardLimits = false (Pro/Business).
             var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
                 @"UPDATE ""UserSubscriptions"" SET
                     ""SMSMessagesUsedThisMonth"" = ""SMSMessagesUsedThisMonth"" + 1,
                     ""OverageChargesThisMonth"" = ""OverageChargesThisMonth"" +
-                        CASE WHEN ""SMSMessagesUsedThisMonth"" + 1 > ""SMSMessagesIncluded""
+                        CASE WHEN ""EnforceHardLimits"" = false
+                            AND ""SMSMessagesUsedThisMonth"" + 1 > ""SMSMessagesIncluded""
                             THEN {0} ELSE 0 END
                 WHERE ""UserId"" = {1}", smsOverageRate, userId);
 
@@ -516,6 +524,24 @@ public class UsageTrackingService : IUsageTrackingService
             UsageType.SMSMessages => subscription.SMSMessagesUsedThisMonth + amount <= subscription.SMSMessagesIncluded,
             UsageType.Images => subscription.ImagesUsedThisMonth + amount <= (int)(subscription.ImagesIncluded * 1.5m), // 150% soft limit
             _ => false
+        };
+    }
+
+    public async Task<bool> IsHardLimitBlockedAsync(string userId, UsageType usageType)
+    {
+        var subscription = await _context.UserSubscriptions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.UserId == userId);
+
+        // Soft-limit plans (Pro/Business) are never blocked — overages are charged instead
+        if (subscription == null || !subscription.EnforceHardLimits) return false;
+
+        return usageType switch
+        {
+            UsageType.AIMinutes        => subscription.AIMinutesUsedThisMonth >= subscription.AIMinutesIncluded,
+            UsageType.SMSMessages      => subscription.SMSMessagesUsedThisMonth >= subscription.SMSMessagesIncluded,
+            UsageType.WhatsAppMessages => subscription.WhatsAppMessagesUsedThisMonth >= subscription.WhatsAppMessagesIncluded,
+            _                          => false
         };
     }
 

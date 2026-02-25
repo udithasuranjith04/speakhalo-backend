@@ -209,6 +209,67 @@ public class UserService : IUserService
         }
     }
 
+    public async Task<Result<bool>> UpdateOnboardingAsync(string userId, UpdateOnboardingRequest request, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+            if (user == null)
+                return Result<bool>.Failure(ErrorMessages.NotFound("User"));
+
+            var profiles = await _unitOfWork.Repository<Domain.Entities.UserProfile>()
+                .FindAsync(p => p.UserId == userId, cancellationToken);
+            var profile = profiles.FirstOrDefault();
+
+            if (profile == null)
+            {
+                profile = new Domain.Entities.UserProfile
+                {
+                    UserId = userId,
+                    BusinessName = user.BusinessName,
+                    Industry = user.Industry,
+                };
+                await _unitOfWork.Repository<Domain.Entities.UserProfile>().AddAsync(profile, cancellationToken);
+            }
+
+            profile.OnboardingStep = request.Step;
+            profile.OnboardingCompleted = request.Completed;
+            profile.UpdatedAt = DateTime.UtcNow;
+
+            if (request.BusinessName != null)
+            {
+                profile.BusinessName = request.BusinessName;
+                user.BusinessName = request.BusinessName;
+                _unitOfWork.Users.Update(user);
+            }
+
+            if (request.BusinessAddress != null)
+                profile.BusinessAddress = request.BusinessAddress;
+
+            if (request.Industry != null && Enum.TryParse<Domain.Enums.ServiceType>(request.Industry, true, out var industry))
+            {
+                profile.Industry = industry;
+                user.Industry = industry;
+                _unitOfWork.Users.Update(user);
+            }
+
+            // Sync obsolete User fields for backward compat
+            user.OnboardingStep = request.Step;
+            user.OnboardingCompleted = request.Completed;
+            _unitOfWork.Users.Update(user);
+
+            _unitOfWork.Repository<Domain.Entities.UserProfile>().Update(profile);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result<bool>.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update onboarding for user {UserId}", userId);
+            return Result<bool>.Failure($"Failed to update onboarding: {ex.Message}");
+        }
+    }
+
     private static UserResponse MapToResponse(Domain.Entities.User user, string? businessAddress = null)
     {
         return new UserResponse
@@ -225,6 +286,8 @@ public class UserService : IUserService
             IsActive = user.IsActive,
             EmailVerified = false,
             TotpEnabled = user.TotpEnabled,
+            OnboardingCompleted = user.OnboardingCompleted,
+            OnboardingStep = user.OnboardingStep,
             CreatedAt = user.CreatedAt
         };
     }
