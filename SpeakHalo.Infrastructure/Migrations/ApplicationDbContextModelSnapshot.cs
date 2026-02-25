@@ -468,6 +468,8 @@ namespace SpeakHalo.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "Status");
 
+                    b.HasIndex("Status", "ScheduledAt", "ReminderSent24h");
+
                     b.ToTable("Appointments");
                 });
 
@@ -2334,6 +2336,8 @@ namespace SpeakHalo.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "IsRead", "CreatedAt");
 
+                    b.HasIndex("UserId", "Type", "CreatedAt");
+
                     b.ToTable("Notifications");
                 });
 
@@ -3459,6 +3463,8 @@ namespace SpeakHalo.Infrastructure.Migrations
                     b.HasIndex("Token")
                         .IsUnique();
 
+                    b.HasIndex("IsRedeemed", "ExpiresAt");
+
                     b.ToTable("TrialInvites");
                 });
 
@@ -3843,10 +3849,14 @@ namespace SpeakHalo.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedAt");
+
                     b.HasIndex("Email")
                         .IsUnique();
 
                     b.HasIndex("Industry");
+
+                    b.HasIndex("IsActive");
 
                     b.ToTable("Users", t =>
                         {
@@ -4484,6 +4494,8 @@ namespace SpeakHalo.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("IsTemporarilySuspended");
+
                     b.HasIndex("PaddleCustomerId");
 
                     b.HasIndex("PaddleSubscriptionId");
@@ -4496,6 +4508,10 @@ namespace SpeakHalo.Infrastructure.Migrations
 
                     b.HasIndex("UserId")
                         .IsUnique();
+
+                    b.HasIndex("IsOnTrial", "TrialEndsAt");
+
+                    b.HasIndex("NextBillingDate", "HasActivePayment");
 
                     b.ToTable("UserSubscriptions");
                 });
@@ -4563,8 +4579,12 @@ namespace SpeakHalo.Infrastructure.Migrations
 
                     b.HasIndex("TrialEndsAt");
 
+                    b.HasIndex("TrialStartedAt");
+
                     b.HasIndex("UserId")
                         .IsUnique();
+
+                    b.HasIndex("IsTrial", "TrialEndsAt");
 
                     b.ToTable("UserTrials");
                 });

@@ -125,6 +125,10 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Industry).HasConversion<string>();
             entity.Property(e => e.IndustrySpecialization).HasMaxLength(200);
 
+            // Performance indexes for admin queries and filtering
+            entity.HasIndex(e => e.IsActive);
+            entity.HasIndex(e => e.CreatedAt);
+
             // Check constraints for data integrity
             entity.ToTable(t => t.HasCheckConstraint("CK_User_Email_Format", "\"Email\" ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'"));
             entity.ToTable(t => t.HasCheckConstraint("CK_User_Name_Length", "LENGTH(\"Name\") >= 2"));
@@ -212,6 +216,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Notes).HasMaxLength(1000);
             entity.HasIndex(e => e.ExpiresAt);
             entity.HasIndex(e => e.IsRedeemed);
+            // Composite index for finding active (unredeemed, not expired) invites
+            entity.HasIndex(e => new { e.IsRedeemed, e.ExpiresAt });
             entity.HasOne(e => e.PricingPlan)
                 .WithMany()
                 .HasForeignKey(e => e.PricingPlanId)
@@ -234,6 +240,10 @@ public class ApplicationDbContext : DbContext
             // Indexes for subscription queries
             entity.HasIndex(e => e.Plan);
             entity.HasIndex(e => e.RolloverExpiresAt);
+            // Performance indexes for trial enforcement and billing jobs
+            entity.HasIndex(e => new { e.IsOnTrial, e.TrialEndsAt });
+            entity.HasIndex(e => e.IsTemporarilySuspended);
+            entity.HasIndex(e => new { e.NextBillingDate, e.HasActivePayment });
             // Pricing Plan FK
             entity.HasIndex(e => e.PricingPlanId);
             // Paddle fields
@@ -267,6 +277,9 @@ public class ApplicationDbContext : DbContext
             // Indexes for trial tracking
             entity.HasIndex(e => e.IsTrial);
             entity.HasIndex(e => e.TrialEndsAt);
+            // Composite index for trial enforcement job queries
+            entity.HasIndex(e => new { e.IsTrial, e.TrialEndsAt });
+            entity.HasIndex(e => e.TrialStartedAt);
             entity.HasOne(e => e.User)
                 .WithOne(u => u.Trial)
                 .HasForeignKey<UserTrial>(e => e.UserId)
@@ -403,6 +416,8 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => new { e.UserId, e.ScheduledAt }); // User's appointments by date
             entity.HasIndex(e => new { e.UserId, e.Status }); // User's appointments by status
             entity.HasIndex(e => new { e.Status, e.ScheduledAt }); // All appointments by status and date
+            // Composite index for appointment reminder background job
+            entity.HasIndex(e => new { e.Status, e.ScheduledAt, e.ReminderSent24h });
             entity.Property(e => e.Status).HasConversion<string>();
             entity.Property(e => e.ServiceType).HasConversion<string>();
             entity.HasOne(e => e.User)
@@ -530,6 +545,8 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.CreatedAt);
             // Composite index for querying unread notifications by user
             entity.HasIndex(e => new { e.UserId, e.IsRead, e.CreatedAt });
+            // Composite index for filtering notifications by type
+            entity.HasIndex(e => new { e.UserId, e.Type, e.CreatedAt });
             // Use JSONB for better PostgreSQL performance
             entity.Property(e => e.Metadata).HasColumnType("jsonb");
             entity.HasOne(e => e.User)
