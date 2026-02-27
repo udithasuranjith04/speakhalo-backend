@@ -53,27 +53,14 @@ public class ExceptionHandlingMiddleware
         string errorMessage;
         object? errorDetails = null;
 
-        if (_environment.IsDevelopment())
+        // Always include exception type and message for diagnostics
+        errorMessage = exception.Message;
+        errorDetails = new
         {
-            errorMessage = exception.Message;
-            errorDetails = new
-            {
-                type = exception.GetType().Name,
-                stackTrace = exception.StackTrace,
-                innerException = exception.InnerException?.Message
-            };
-        }
-        else
-        {
-            errorMessage = statusCode switch
-            {
-                HttpStatusCode.BadRequest => "The request was invalid. Please check your input and try again.",
-                HttpStatusCode.Unauthorized => "You are not authorized to perform this action.",
-                HttpStatusCode.NotFound => "The requested resource was not found.",
-                HttpStatusCode.Conflict => "The operation could not be completed due to a conflict.",
-                _ => "An error occurred while processing your request. Please try again later."
-            };
-        }
+            type = exception.GetType().Name,
+            stackTrace = _environment.IsDevelopment() ? exception.StackTrace : null,
+            innerException = exception.InnerException?.Message
+        };
 
         object result;
         if (_environment.IsDevelopment() && errorDetails != null)
