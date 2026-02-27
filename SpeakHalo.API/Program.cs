@@ -685,20 +685,6 @@ if (app.Environment.IsDevelopment() || args.Contains("--seed"))
 
         try
         {
-            Log.Information("🌱 Seeding initial users (admin + demo)...");
-            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<SpeakHalo.Infrastructure.Data.DatabaseSeeder>>();
-            var userSeeder = new SpeakHalo.Infrastructure.Data.DatabaseSeeder(context, logger);
-            await userSeeder.SeedAsync();
-            Log.Information("✅ Initial users seeded successfully");
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Users may already be seeded or seeding failed");
-        }
-
-        try
-        {
             Log.Information("🌱 Seeding industry data...");
             var industryContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             await SpeakHalo.Infrastructure.Data.IndustrySeedData.SeedIndustriesAsync(industryContext);
@@ -707,6 +693,20 @@ if (app.Environment.IsDevelopment() || args.Contains("--seed"))
         catch (Exception ex)
         {
             Log.Warning(ex, "Industry data may already be seeded or seeding failed");
+        }
+
+        try
+        {
+            Log.Information("🌱 Seeding admin user, feature flags, and pricing plans...");
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<SpeakHalo.Infrastructure.Data.DatabaseSeeder>>();
+            var userSeeder = new SpeakHalo.Infrastructure.Data.DatabaseSeeder(context, logger);
+            await userSeeder.SeedAsync();
+            Log.Information("✅ Admin user, feature flags, and pricing plans seeded successfully");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Seed data may already exist or seeding failed");
         }
 
         try
