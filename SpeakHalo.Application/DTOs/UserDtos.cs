@@ -42,5 +42,6 @@ public record UserResponse
     public bool TotpEnabled { get; init; }
     public bool OnboardingCompleted { get; init; }
     public int OnboardingStep { get; init; }
+    public bool GoogleCalendarConnected { get; init; }
     public DateTime CreatedAt { get; init; }
 }

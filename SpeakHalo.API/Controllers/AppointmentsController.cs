@@ -21,11 +21,13 @@ public class AppointmentsController : ControllerBase
 {
     private readonly IAppointmentService _appointmentService;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICalendarService _calendarService;
 
-    public AppointmentsController(IAppointmentService appointmentService, IUnitOfWork unitOfWork)
+    public AppointmentsController(IAppointmentService appointmentService, IUnitOfWork unitOfWork, ICalendarService calendarService)
     {
         _appointmentService = appointmentService;
         _unitOfWork = unitOfWork;
+        _calendarService = calendarService;
     }
 
     private async Task<bool> UserOwnsAppointmentAsync(string appointmentId, string userId)
@@ -114,6 +116,19 @@ public class AppointmentsController : ControllerBase
         var appointment = await _unitOfWork.Repository<Appointment>().GetByIdAsync(id, cancellationToken);
         if (appointment == null)
             return NotFound();
+
+        // Delete from Google Calendar if event exists
+        if (!string.IsNullOrEmpty(appointment.GoogleCalendarEventId))
+        {
+            try
+            {
+                await _calendarService.DeleteEventAsync(userId, appointment.GoogleCalendarEventId, cancellationToken);
+            }
+            catch
+            {
+                // Don't fail the delete if calendar sync fails
+            }
+        }
 
         _unitOfWork.Repository<Appointment>().HardDelete(appointment);
         await _unitOfWork.SaveChangesAsync(cancellationToken);

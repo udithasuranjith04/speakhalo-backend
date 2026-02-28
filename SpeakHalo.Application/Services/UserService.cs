@@ -288,6 +288,7 @@ public class UserService : IUserService
             TotpEnabled = user.TotpEnabled,
             OnboardingCompleted = user.OnboardingCompleted,
             OnboardingStep = user.OnboardingStep,
+            GoogleCalendarConnected = user.Profile?.GoogleCalendarConnected ?? false,
             CreatedAt = user.CreatedAt
         };
     }

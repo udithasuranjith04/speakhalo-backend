@@ -9,4 +9,10 @@ public interface ICalendarService
     Task<Result<bool>> DeleteEventAsync(string userId, string eventId, CancellationToken cancellationToken = default);
     Task<Result<List<object>>> GetEventsAsync(string userId, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default);
     Task<Result<bool>> CheckAvailabilityAsync(string userId, DateTime startTime, DateTime endTime, CancellationToken cancellationToken = default);
+
+    // OAuth methods
+    Task<Result<string>> GetAuthorizationUrlAsync(string userId, CancellationToken cancellationToken = default);
+    Task<Result<bool>> HandleOAuthCallbackAsync(string code, string state, CancellationToken cancellationToken = default);
+    Task<Result<bool>> DisconnectAsync(string userId, CancellationToken cancellationToken = default);
+    Task<Result<bool>> IsConnectedAsync(string userId, CancellationToken cancellationToken = default);
 }

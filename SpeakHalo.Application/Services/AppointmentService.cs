@@ -14,12 +14,14 @@ public class AppointmentService : IAppointmentService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IEmailService _emailService;
+    private readonly ICalendarService _calendarService;
     private readonly ILogger<AppointmentService> _logger;
 
-    public AppointmentService(IUnitOfWork unitOfWork, IEmailService emailService, ILogger<AppointmentService> logger)
+    public AppointmentService(IUnitOfWork unitOfWork, IEmailService emailService, ICalendarService calendarService, ILogger<AppointmentService> logger)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
+        _calendarService = calendarService;
         _logger = logger;
     }
 
@@ -41,6 +43,35 @@ public class AppointmentService : IAppointmentService
 
             await _unitOfWork.Appointments.AddAsync(appointment, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            // Sync to Google Calendar if connected
+            try
+            {
+                var connected = await _calendarService.IsConnectedAsync(request.UserId, cancellationToken);
+                if (connected.IsSuccess && connected.Data)
+                {
+                    var endTime = appointment.ScheduledAt.AddMinutes(appointment.DurationMinutes);
+                    var calResult = await _calendarService.CreateEventAsync(
+                        request.UserId,
+                        $"Appointment - {appointment.ServiceType}",
+                        appointment.Notes ?? "",
+                        appointment.ScheduledAt,
+                        endTime,
+                        appointment.Location,
+                        cancellationToken);
+
+                    if (calResult.IsSuccess)
+                    {
+                        appointment.GoogleCalendarEventId = calResult.Data;
+                        _unitOfWork.Appointments.Update(appointment);
+                        await _unitOfWork.SaveChangesAsync(cancellationToken);
+                    }
+                }
+            }
+            catch (Exception calEx)
+            {
+                _logger.LogWarning(calEx, "Failed to sync appointment to Google Calendar for user {UserId}", request.UserId);
+            }
 
             return Result<AppointmentResponse>.Success(MapToResponse(appointment));
         }
@@ -150,6 +181,29 @@ public class AppointmentService : IAppointmentService
             _unitOfWork.Appointments.Update(appointment);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+            // Sync update to Google Calendar if event exists
+            if (!string.IsNullOrEmpty(appointment.GoogleCalendarEventId))
+            {
+                try
+                {
+                    var endTime = request.ScheduledAt.HasValue || request.DurationMinutes.HasValue
+                        ? (DateTime?)appointment.ScheduledAt.AddMinutes(appointment.DurationMinutes)
+                        : null;
+
+                    await _calendarService.UpdateEventAsync(
+                        appointment.UserId,
+                        appointment.GoogleCalendarEventId,
+                        null,
+                        request.ScheduledAt,
+                        endTime,
+                        cancellationToken);
+                }
+                catch (Exception calEx)
+                {
+                    _logger.LogWarning(calEx, "Failed to sync appointment update to Google Calendar for {AppointmentId}", appointmentId);
+                }
+            }
+
             return Result<AppointmentResponse>.Success(MapToResponse(appointment));
         }
         catch (Exception ex)
@@ -174,6 +228,22 @@ public class AppointmentService : IAppointmentService
 
             _unitOfWork.Appointments.Update(appointment);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            // Delete from Google Calendar if event exists
+            if (!string.IsNullOrEmpty(appointment.GoogleCalendarEventId))
+            {
+                try
+                {
+                    await _calendarService.DeleteEventAsync(
+                        appointment.UserId,
+                        appointment.GoogleCalendarEventId,
+                        cancellationToken);
+                }
+                catch (Exception calEx)
+                {
+                    _logger.LogWarning(calEx, "Failed to delete cancelled appointment from Google Calendar for {AppointmentId}", appointmentId);
+                }
+            }
 
             return Result<bool>.Success(true);
         }

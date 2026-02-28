@@ -9,13 +9,16 @@ namespace SpeakHalo.Application.Services;
 public class AIFunctionToolsService : IAIFunctionToolsService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICalendarService _calendarService;
     private readonly ILogger<AIFunctionToolsService> _logger;
 
     public AIFunctionToolsService(
         IUnitOfWork unitOfWork,
+        ICalendarService calendarService,
         ILogger<AIFunctionToolsService> logger)
     {
         _unitOfWork = unitOfWork;
+        _calendarService = calendarService;
         _logger = logger;
     }
 
@@ -61,6 +64,33 @@ public class AIFunctionToolsService : IAIFunctionToolsService
 
             await _unitOfWork.Repository<Appointment>().AddAsync(appointment, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            // Sync to Google Calendar if connected
+            try
+            {
+                var connected = await _calendarService.IsConnectedAsync(userId, cancellationToken);
+                if (connected.IsSuccess && connected.Data)
+                {
+                    var endTime = appointment.ScheduledAt.AddMinutes(60); // Default 1 hour
+                    var calResult = await _calendarService.CreateEventAsync(
+                        userId,
+                        $"Appointment - {parameters.ServiceType} - {parameters.CustomerName}",
+                        parameters.Notes ?? "",
+                        appointment.ScheduledAt,
+                        endTime,
+                        cancellationToken: cancellationToken);
+
+                    if (calResult.IsSuccess)
+                    {
+                        appointment.GoogleCalendarEventId = calResult.Data;
+                        await _unitOfWork.SaveChangesAsync(cancellationToken);
+                    }
+                }
+            }
+            catch (Exception calEx)
+            {
+                _logger.LogWarning(calEx, "Failed to sync AI-booked appointment to Google Calendar");
+            }
 
             return new
             {
@@ -194,6 +224,34 @@ public class AIFunctionToolsService : IAIFunctionToolsService
 
             var bookedSlots = appointments.Select(a => a.ScheduledAt).ToList();
 
+            // Also check Google Calendar for conflicts if connected
+            var googleBusySlots = new HashSet<DateTime>();
+            try
+            {
+                var connected = await _calendarService.IsConnectedAsync(userId, cancellationToken);
+                if (connected.IsSuccess && connected.Data)
+                {
+                    var eventsResult = await _calendarService.GetEventsAsync(userId, parameters.StartDate, parameters.EndDate, cancellationToken);
+                    if (eventsResult.IsSuccess && eventsResult.Data != null)
+                    {
+                        foreach (var evt in eventsResult.Data)
+                        {
+                            // Events are anonymous objects with start/end DateTime
+                            var startProp = evt.GetType().GetProperty("start");
+                            if (startProp?.GetValue(evt) is DateTime startDt)
+                            {
+                                // Mark the hour slot as busy
+                                googleBusySlots.Add(new DateTime(startDt.Year, startDt.Month, startDt.Day, startDt.Hour, 0, 0, DateTimeKind.Utc));
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception calEx)
+            {
+                _logger.LogWarning(calEx, "Failed to check Google Calendar availability, proceeding with local data only");
+            }
+
             var availableSlots = new List<DateTime>();
             var currentDate = parameters.StartDate.Date;
 
@@ -204,7 +262,7 @@ public class AIFunctionToolsService : IAIFunctionToolsService
                     for (int hour = 9; hour < 17; hour++)
                     {
                         var slot = currentDate.AddHours(hour);
-                        if (!bookedSlots.Contains(slot) && slot > DateTime.UtcNow)
+                        if (!bookedSlots.Contains(slot) && !googleBusySlots.Contains(slot) && slot > DateTime.UtcNow)
                         {
                             availableSlots.Add(slot);
                         }
