@@ -113,8 +113,9 @@ public class AuthService : IAuthService
         if (userAuth != null && IsLockedOut(userAuth, out var remaining))
             return Result<LoginResponse>.Failure($"Account is temporarily locked. Try again in {remaining} minute(s).");
 
-        // Verify password
-        if (!BCrypt.Net.BCrypt.Verify(request.Password, user.HashedPassword))
+        // Verify password (prefer UserAuth, fall back to legacy User.HashedPassword)
+        var passwordHash = userAuth?.HashedPassword ?? user.HashedPassword;
+        if (string.IsNullOrEmpty(passwordHash) || !BCrypt.Net.BCrypt.Verify(request.Password, passwordHash))
         {
             if (userAuth != null)
                 await TrackFailedAttemptAsync(userAuth, cancellationToken);

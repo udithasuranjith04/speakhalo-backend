@@ -165,7 +165,6 @@ public class TrialInviteService : ITrialInviteService
         invite.IsRedeemed = true;
         invite.RedeemedAt = DateTime.UtcNow;
         invite.RedeemedByUserId = userId;
-        _unitOfWork.Repository<TrialInvite>().Update(invite);
 
         // Get the pricing plan
         var plan = await _unitOfWork.Repository<PricingPlan>()
@@ -201,8 +200,6 @@ public class TrialInviteService : ITrialInviteService
         sub.BillingCycleStartDate = DateTime.UtcNow;
         sub.NextBillingDate = DateTime.UtcNow.AddDays(invite.TrialDays);
 
-        _unitOfWork.Repository<UserSubscription>().Update(sub);
-
         // Update UserTrial record
         var trials = await _unitOfWork.Repository<UserTrial>()
             .FindAsync(t => t.UserId == userId, cancellationToken);
@@ -211,7 +208,6 @@ public class TrialInviteService : ITrialInviteService
         {
             trial.IsTrial = true;
             trial.TrialEndsAt = sub.TrialEndsAt;
-            _unitOfWork.Repository<UserTrial>().Update(trial);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

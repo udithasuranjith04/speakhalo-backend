@@ -62,24 +62,12 @@ public class ExceptionHandlingMiddleware
             innerException = exception.InnerException?.Message
         };
 
-        object result;
-        if (_environment.IsDevelopment() && errorDetails != null)
+        object result = new
         {
-            result = new
-            {
-                isSuccess = false,
-                errors = new[] { errorMessage },
-                details = errorDetails
-            };
-        }
-        else
-        {
-            result = new
-            {
-                isSuccess = false,
-                errors = new[] { errorMessage }
-            };
-        }
+            isSuccess = false,
+            errors = new[] { errorMessage },
+            details = errorDetails
+        };
 
         var options = new JsonSerializerOptions
         {

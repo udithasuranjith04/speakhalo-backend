@@ -189,6 +189,7 @@ public class SubscriptionController : ControllerBase
             HashedPassword = BCrypt.Net.BCrypt.HashPassword(request.Password, workFactor: 12),
             Role = Domain.Enums.UserRole.Owner,
             BusinessName = request.BusinessName.Trim(),
+            Industry = Domain.Enums.ServiceType.Cleaning,
             IsActive = false,
             PasswordMustChange = false,
             TemporaryPassword = false

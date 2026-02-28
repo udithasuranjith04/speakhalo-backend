@@ -47,6 +47,8 @@ public class DatabaseSeeder
         var existingAdmin = await _context.Users.FirstOrDefaultAsync(u => u.Email == "admin@speakhalo.com");
         if (existingAdmin != null)
         {
+            existingAdmin.HashedPassword = hashedPassword;
+
             var existingAuth = await _context.Set<UserAuth>().FirstOrDefaultAsync(a => a.UserId == existingAdmin.Id);
             if (existingAuth != null)
             {
@@ -86,6 +88,7 @@ public class DatabaseSeeder
         {
             Name = "Admin User",
             Email = "admin@speakhalo.com",
+            HashedPassword = hashedPassword,
             Role = UserRole.Admin,
             IsActive = true,
             BusinessName = "SpeakHalo Admin",

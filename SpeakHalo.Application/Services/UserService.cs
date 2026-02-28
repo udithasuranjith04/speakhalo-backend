@@ -129,10 +129,16 @@ public class UserService : IUserService
             if (user == null)
                 return Result<bool>.Failure(ErrorMessages.NotFound("User"));
 
-            if (!BCrypt.Net.BCrypt.Verify(currentPassword, user.HashedPassword))
+            var userAuth = await _unitOfWork.Repository<Domain.Entities.UserAuth>()
+                .FirstOrDefaultAsync(a => a.UserId == userId, cancellationToken);
+            var passwordHash = userAuth?.HashedPassword ?? user.HashedPassword;
+            if (string.IsNullOrEmpty(passwordHash) || !BCrypt.Net.BCrypt.Verify(currentPassword, passwordHash))
                 return Result<bool>.Failure("Current password is incorrect");
 
-            user.HashedPassword = BCrypt.Net.BCrypt.HashPassword(newPassword, workFactor: 12);
+            var newHash = BCrypt.Net.BCrypt.HashPassword(newPassword, workFactor: 12);
+            if (userAuth != null)
+                userAuth.HashedPassword = newHash;
+            user.HashedPassword = newHash;
 
             // Security: Invalidate all refresh tokens when password changes
             // This forces re-authentication on all devices

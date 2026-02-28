@@ -255,6 +255,7 @@ public class AuthController : ControllerBase
             HashedPassword = BCrypt.Net.BCrypt.HashPassword(request.Password, workFactor: 12),
             Role = UserRole.Owner,
             BusinessName = request.BusinessName?.Trim() ?? "",
+            Industry = ServiceType.Cleaning,
             IsActive = true,
             PasswordMustChange = false,
             TemporaryPassword = false

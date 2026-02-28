@@ -403,6 +403,7 @@ public class AdminUserManagementController : ControllerBase
             HashedPassword = BCrypt.Net.BCrypt.HashPassword(tempPassword, workFactor: 12),
             Role = UserRole.Owner,
             BusinessName = request.BusinessName ?? "",
+            Industry = ServiceType.Cleaning,
             IsActive = true,
             PasswordMustChange = true,
             TemporaryPassword = true,
