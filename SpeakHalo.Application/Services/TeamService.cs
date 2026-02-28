@@ -164,84 +164,54 @@ public class TeamService : ITeamService
         if (team == null)
             return Result<TeamInviteDto>.Failure("You must be a team owner or admin to invite members");
 
-        // Declare outside transaction scope so they're accessible for email and response
-        string token;
-        TeamInvite invite;
+        // Check team member limit
+        var members = await _unitOfWork.Repository<TeamMember>()
+            .FindAsync(m => m.TeamId == team.Id);
+        var pendingInvites = await _unitOfWork.Repository<TeamInvite>()
+            .FindAsync(i => i.TeamId == team.Id && i.Status == InviteStatus.Pending);
 
-        // Use transaction to prevent TOCTOU race condition on member limit check
-        await _unitOfWork.BeginTransactionAsync();
-        try
+        if (members.Count() + pendingInvites.Count() + 1 >= team.MaxMembers) // +1 for owner
+            return Result<TeamInviteDto>.Failure($"Team member limit reached ({team.MaxMembers}). Upgrade your plan for more members.");
+
+        // Check for existing membership
+        var existingUser = (await _unitOfWork.Repository<User>()
+            .FindAsync(u => u.Email == email)).FirstOrDefault();
+        if (existingUser != null)
         {
-            // Check team member limit
-            var members = await _unitOfWork.Repository<TeamMember>()
-                .FindAsync(m => m.TeamId == team.Id);
-            var pendingInvites = await _unitOfWork.Repository<TeamInvite>()
-                .FindAsync(i => i.TeamId == team.Id && i.Status == InviteStatus.Pending);
+            var existingMember = (await _unitOfWork.Repository<TeamMember>()
+                .FindAsync(m => m.TeamId == team.Id && m.UserId == existingUser.Id)).FirstOrDefault();
+            if (existingMember != null)
+                return Result<TeamInviteDto>.Failure("This user is already a member of your team");
 
-            if (members.Count() + pendingInvites.Count() + 1 >= team.MaxMembers) // +1 for owner
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                return Result<TeamInviteDto>.Failure($"Team member limit reached ({team.MaxMembers}). Upgrade your plan for more members.");
-            }
-
-            // Check for existing membership
-            var existingUser = (await _unitOfWork.Repository<User>()
-                .FindAsync(u => u.Email == email)).FirstOrDefault();
-            if (existingUser != null)
-            {
-                var existingMember = (await _unitOfWork.Repository<TeamMember>()
-                    .FindAsync(m => m.TeamId == team.Id && m.UserId == existingUser.Id)).FirstOrDefault();
-                if (existingMember != null)
-                {
-                    await _unitOfWork.RollbackTransactionAsync();
-                    return Result<TeamInviteDto>.Failure("This user is already a member of your team");
-                }
-
-                if (existingUser.Id == team.OwnerId)
-                {
-                    await _unitOfWork.RollbackTransactionAsync();
-                    return Result<TeamInviteDto>.Failure("Cannot invite the team owner");
-                }
-            }
-
-            // Check for existing pending invite
-            var existingInvite = (await _unitOfWork.Repository<TeamInvite>()
-                .FindAsync(i => i.TeamId == team.Id && i.Email == email && i.Status == InviteStatus.Pending)).FirstOrDefault();
-            if (existingInvite != null)
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                return Result<TeamInviteDto>.Failure("An invitation has already been sent to this email");
-            }
-
-            // Owners and admins cannot be invited as members with lower role than inviter
-            var inviterRole = await GetUserTeamRoleAsync(userId, team);
-            if (role <= inviterRole && inviterRole != TeamRole.Owner)
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                return Result<TeamInviteDto>.Failure("You cannot invite someone with a role equal to or higher than yours");
-            }
-
-            token = GenerateInviteToken();
-            var tokenHash = HashToken(token);
-            invite = new TeamInvite
-            {
-                TeamId = team.Id,
-                Email = email,
-                Role = role,
-                InvitedByUserId = userId,
-                Token = tokenHash,
-                ExpiresAt = DateTime.UtcNow.AddDays(7)
-            };
-
-            await _unitOfWork.Repository<TeamInvite>().AddAsync(invite);
-            await _unitOfWork.SaveChangesAsync();
-            await _unitOfWork.CommitTransactionAsync();
+            if (existingUser.Id == team.OwnerId)
+                return Result<TeamInviteDto>.Failure("Cannot invite the team owner");
         }
-        catch
+
+        // Check for existing pending invite
+        var existingInvite = (await _unitOfWork.Repository<TeamInvite>()
+            .FindAsync(i => i.TeamId == team.Id && i.Email == email && i.Status == InviteStatus.Pending)).FirstOrDefault();
+        if (existingInvite != null)
+            return Result<TeamInviteDto>.Failure("An invitation has already been sent to this email");
+
+        // Owners and admins cannot be invited as members with lower role than inviter
+        var inviterRole = await GetUserTeamRoleAsync(userId, team);
+        if (role <= inviterRole && inviterRole != TeamRole.Owner)
+            return Result<TeamInviteDto>.Failure("You cannot invite someone with a role equal to or higher than yours");
+
+        var token = GenerateInviteToken();
+        var tokenHash = HashToken(token);
+        var invite = new TeamInvite
         {
-            await _unitOfWork.RollbackTransactionAsync();
-            throw;
-        }
+            TeamId = team.Id,
+            Email = email,
+            Role = role,
+            InvitedByUserId = userId,
+            Token = tokenHash,
+            ExpiresAt = DateTime.UtcNow.AddDays(7)
+        };
+
+        await _unitOfWork.Repository<TeamInvite>().AddAsync(invite);
+        await _unitOfWork.SaveChangesAsync();
 
         // Send invite email (outside transaction - non-critical)
         var inviter = await _unitOfWork.Repository<User>().GetByIdAsync(userId);

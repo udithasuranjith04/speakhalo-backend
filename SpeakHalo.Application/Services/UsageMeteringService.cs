@@ -83,8 +83,8 @@ public class UsageMeteringService : IUsageMeteringService
         {
             var currentPeriod = await GetOrCreateCurrentPeriodAsync(userId, cancellationToken);
 
-            var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
-            var yearStart = new DateTime(DateTime.UtcNow.Year, 1, 1);
+            var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var yearStart = new DateTime(DateTime.UtcNow.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
             var allUsage = await _unitOfWork.Repository<UsageCosts>()
                 .FindAsync(u => u.UserId == userId, cancellationToken);
@@ -233,7 +233,7 @@ public class UsageMeteringService : IUsageMeteringService
     private async Task<UsageCosts> GetOrCreateCurrentPeriodAsync(string userId, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
-        var periodStart = new DateTime(now.Year, now.Month, 1);
+        var periodStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var periodEnd = periodStart.AddMonths(1);
 
         var existingUsage = await _unitOfWork.Repository<UsageCosts>()

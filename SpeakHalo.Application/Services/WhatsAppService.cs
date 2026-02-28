@@ -167,17 +167,22 @@ public class WhatsAppService : IWhatsAppService
                 ).ToList();
             }
 
-            var paginatedConversations = await conversations
-                .AsQueryable()
-                .ToPaginatedListAsync(pageNumber, pageSize, cancellationToken);
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1) pageSize = 20;
 
-            var responses = paginatedConversations.Items.Select(MapToConversationResponse).ToList();
+            var totalCount = conversations.Count();
+            var paginatedItems = conversations
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            var responses = paginatedItems.Select(MapToConversationResponse).ToList();
 
             var result = new PaginatedList<WhatsAppConversationResponse>(
                 responses,
-                paginatedConversations.TotalCount,
-                paginatedConversations.CurrentPage,
-                paginatedConversations.PageSize
+                totalCount,
+                pageNumber,
+                pageSize
             );
 
             return Result<PaginatedList<WhatsAppConversationResponse>>.Success(result);

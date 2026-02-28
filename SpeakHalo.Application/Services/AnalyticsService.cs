@@ -145,7 +145,7 @@ public class AnalyticsService : IAnalyticsService
                 .FindAsync(c => c.UserId == userId, cancellationToken);
             var customersList = customers.ToList();
 
-            var thisMonthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+            var thisMonthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
             var newThisMonth = customersList.Count(c => c.CreatedAt >= thisMonthStart);
             var activeCustomers = customersList.Count(c => c.JobCount > 0);
 
@@ -165,7 +165,7 @@ public class AnalyticsService : IAnalyticsService
                     {
                         Month = $"{g.Key.Year}-{g.Key.Month:D2}",
                         NewCustomers = g.Count(),
-                        TotalCustomers = customersList.Count(c => c.CreatedAt <= new DateTime(g.Key.Year, g.Key.Month, DateTime.DaysInMonth(g.Key.Year, g.Key.Month)))
+                        TotalCustomers = customersList.Count(c => c.CreatedAt <= new DateTime(g.Key.Year, g.Key.Month, DateTime.DaysInMonth(g.Key.Year, g.Key.Month), 23, 59, 59, DateTimeKind.Utc))
                     })
                     .OrderBy(g => g.Month)
                     .ToList(),
@@ -451,7 +451,7 @@ public class AnalyticsService : IAnalyticsService
             for (int i = 0; i < months; i++)
             {
                 var monthStart = today.AddMonths(-i);
-                var monthStartFirstDay = new DateTime(monthStart.Year, monthStart.Month, 1);
+                var monthStartFirstDay = new DateTime(monthStart.Year, monthStart.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
                 // Users who existed at start of month
                 var activeAtStart = subsList.Count(s => s.CreatedAt < monthStartFirstDay);
@@ -491,7 +491,7 @@ public class AnalyticsService : IAnalyticsService
         return await _cacheService.GetOrSetAsync(cacheKey, async () =>
         {
             var now = DateTime.UtcNow;
-            var previousMonthStart = new DateTime(now.Year, now.Month, 1).AddMonths(-1);
+            var previousMonthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-1);
 
             // Get monthly churn rates
             var monthlyChurnRates = await CalculateMonthlyChurnRateAsync(months, cancellationToken);

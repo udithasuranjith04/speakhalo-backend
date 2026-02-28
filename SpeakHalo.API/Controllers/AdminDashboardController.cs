@@ -30,7 +30,7 @@ public class AdminDashboardController : ControllerBase
         try
         {
             var now = DateTime.UtcNow;
-            var monthStart = new DateTime(now.Year, now.Month, 1);
+            var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
             var invoiceRepo = _unitOfWork.Repository<Invoice>();
             var totalRevenue = await invoiceRepo.SumAsync(i => (decimal?)i.Total, cancellationToken) ?? 0;
@@ -154,7 +154,7 @@ public class AdminDashboardController : ControllerBase
         try
         {
             var now = DateTime.UtcNow;
-            var monthStart = new DateTime(now.Year, now.Month, 1);
+            var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
             var totalCustomers = await _unitOfWork.Users.CountAsync(null, cancellationToken);
             var activeCustomers = await _unitOfWork.Users.CountAsync(u => u.IsActive, cancellationToken);
@@ -270,7 +270,7 @@ public class AdminDashboardController : ControllerBase
         try
         {
             var now = DateTime.UtcNow;
-            var monthStart = new DateTime(now.Year, now.Month, 1);
+            var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
             var invoiceRepo = _unitOfWork.Repository<Invoice>();
 
