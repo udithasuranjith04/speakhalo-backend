@@ -278,7 +278,8 @@ public class AuthController : ControllerBase
         {
             UserId = user.Id,
             BusinessName = request.BusinessName?.Trim() ?? "",
-            Industry = ServiceType.Cleaning
+            Industry = ServiceType.Cleaning,
+            Country = request.Country?.Trim().ToUpperInvariant()
         };
         await _unitOfWork.Repository<UserProfile>().AddAsync(userProfile, cancellationToken);
 
@@ -320,7 +321,8 @@ public class AuthController : ControllerBase
             Language = "en",
             Tone = "professional",
             TransferOnComplexIssues = true,
-            EnableTroubleshooting = true
+            EnableTroubleshooting = true,
+            HumanBackupNumber = request.ForwardingNumber?.Trim()
         };
         await _unitOfWork.Repository<AgentProfile>().AddAsync(agentProfile, cancellationToken);
 

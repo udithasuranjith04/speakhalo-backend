@@ -1315,13 +1315,40 @@ public class AdminUserManagementController : ControllerBase
         sub.SuspendedReason = null;
 
         _unitOfWork.Repository<UserSubscription>().Update(sub);
+
+        // Also ensure the User account itself is active
+        var activatedUser = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        if (activatedUser != null && !activatedUser.IsActive)
+        {
+            activatedUser.IsActive = true;
+            _unitOfWork.Users.Update(activatedUser);
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Admin {AdminId} activated user {UserId}", adminId, userId);
 
         // Notify admins in real-time
-        var activatedUser = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
         _ = _adminNotifications.NotifyUserActivatedAsync(userId, activatedUser?.Email ?? userId, adminId);
+
+        // Send activation email to user
+        if (activatedUser != null)
+        {
+            var planName = sub.Plan ?? "your selected plan";
+            var emailHtml = $@"
+                <div style='font-family: sans-serif; max-width: 600px; margin: 0 auto;'>
+                    <h2 style='color: #1e293b;'>Your SpeakHalo Account is Approved!</h2>
+                    <p>Hi {activatedUser.Name},</p>
+                    <p>Great news! Your SpeakHalo account has been reviewed and approved. You can now sign in and start using your <strong>{planName}</strong> plan.</p>
+                    <p style='margin: 24px 0;'>
+                        <a href='https://speakhalo.com/signin' style='background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;'>Sign In to SpeakHalo</a>
+                    </p>
+                    <p style='color: #64748b; font-size: 14px;'>If you have any questions, reply to this email or contact us at support@speakhalo.com.</p>
+                    <p style='color: #64748b; font-size: 14px;'>Welcome aboard!</p>
+                    <p style='color: #64748b; font-size: 14px;'>The SpeakHalo Team</p>
+                </div>";
+            _ = _emailService.SendEmailAsync(activatedUser.Email, "Your SpeakHalo Account is Approved!", emailHtml);
+        }
 
         return Ok(new { message = "User activated successfully", userId });
     }
@@ -1470,7 +1497,7 @@ public class AdminUserManagementController : ControllerBase
     }
 
     /// <summary>
-    /// Admin issues a refund for a user (within 14-day window).
+    /// Admin issues a refund for a user (within 30-day window).
     /// </summary>
     [HttpPost("{userId}/refund")]
     public async Task<IActionResult> AdminRefundUser(
@@ -1494,8 +1521,8 @@ public class AdminUserManagementController : ControllerBase
         if (sub.RefundedAt.HasValue)
             return BadRequest(new { error = "Already refunded" });
 
-        if ((DateTime.UtcNow - sub.FirstPaymentAt.Value).TotalDays > 14)
-            return BadRequest(new { error = "Refund window (14 days) has expired" });
+        if ((DateTime.UtcNow - sub.FirstPaymentAt.Value).TotalDays > 30)
+            return BadRequest(new { error = "Refund window (30 days) has expired" });
 
         // Mark as refunded and cancel
         sub.RefundedAt = DateTime.UtcNow;

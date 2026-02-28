@@ -21,6 +21,8 @@ public class SubscriptionController : ControllerBase
     private readonly IPaddleService _paddleService;
     private readonly ITrialInviteService _trialInviteService;
     private readonly IAuthService _authService;
+    private readonly IAdminNotificationService _adminNotifications;
+    private readonly IEmailService _emailService;
     private readonly ILogger<SubscriptionController> _logger;
 
     public SubscriptionController(
@@ -28,12 +30,16 @@ public class SubscriptionController : ControllerBase
         IPaddleService paddleService,
         ITrialInviteService trialInviteService,
         IAuthService authService,
+        IAdminNotificationService adminNotifications,
+        IEmailService emailService,
         ILogger<SubscriptionController> logger)
     {
         _unitOfWork = unitOfWork;
         _paddleService = paddleService;
         _trialInviteService = trialInviteService;
         _authService = authService;
+        _adminNotifications = adminNotifications;
+        _emailService = emailService;
         _logger = logger;
     }
 
@@ -146,7 +152,8 @@ public class SubscriptionController : ControllerBase
     }
 
     /// <summary>
-    /// Public checkout: create user account + Paddle transaction in one step.
+    /// Public registration: create a pending user account for admin review.
+    /// User is created with IsActive=false. Admin activates via admin panel.
     /// </summary>
     [AllowAnonymous]
     [HttpPost("checkout-public")]
@@ -158,9 +165,15 @@ public class SubscriptionController : ControllerBase
             string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.BusinessName))
             return BadRequest(new { error = "All fields are required" });
 
+        if (string.IsNullOrWhiteSpace(request.Country))
+            return BadRequest(new { error = "Country is required" });
+
+        if (string.IsNullOrWhiteSpace(request.ForwardingNumber))
+            return BadRequest(new { error = "Forwarding number is required" });
+
         var plan = await _unitOfWork.Repository<PricingPlan>()
             .GetByIdAsync(request.PricingPlanId, cancellationToken);
-        if (plan == null || plan.IsDeleted || !plan.IsActive || string.IsNullOrEmpty(plan.PaddlePriceId))
+        if (plan == null || plan.IsDeleted || !plan.IsActive)
             return BadRequest(new { error = "Invalid pricing plan" });
 
         var existing = await _unitOfWork.Repository<User>()
@@ -168,6 +181,7 @@ public class SubscriptionController : ControllerBase
         if (existing.Any())
             return BadRequest(new { error = "An account with this email already exists" });
 
+        // Create user as INACTIVE (pending admin approval)
         var user = new User
         {
             Name = request.Name.Trim(),
@@ -175,7 +189,7 @@ public class SubscriptionController : ControllerBase
             HashedPassword = BCrypt.Net.BCrypt.HashPassword(request.Password, workFactor: 12),
             Role = Domain.Enums.UserRole.Owner,
             BusinessName = request.BusinessName.Trim(),
-            IsActive = true,
+            IsActive = false,
             PasswordMustChange = false,
             TemporaryPassword = false
         };
@@ -196,12 +210,10 @@ public class SubscriptionController : ControllerBase
         {
             UserId = user.Id,
             BusinessName = request.BusinessName.Trim(),
-            Industry = Domain.Enums.ServiceType.Cleaning
+            Industry = Domain.Enums.ServiceType.Cleaning,
+            Country = request.Country.Trim().ToUpperInvariant()
         };
         await _unitOfWork.Repository<UserProfile>().AddAsync(userProfile, cancellationToken);
-
-        var customerResult = await _paddleService.CreateCustomerAsync(user.Email, user.Name, cancellationToken);
-        var paddleCustomerId = customerResult.IsSuccess ? customerResult.Data?.Id : null;
 
         var subscription = new UserSubscription
         {
@@ -211,7 +223,6 @@ public class SubscriptionController : ControllerBase
             RequiresPayment = true,
             HasActivePayment = false,
             SelectedPlanAtRegistration = plan.Name,
-            PaddleCustomerId = paddleCustomerId,
             AIMinutesIncluded = plan.AIMinutesIncluded,
             SMSMessagesIncluded = plan.SMSMessagesIncluded,
             WhatsAppMessagesIncluded = plan.WhatsAppMessagesIncluded,
@@ -251,34 +262,53 @@ public class SubscriptionController : ControllerBase
             Language = "en",
             Tone = "professional",
             TransferOnComplexIssues = true,
-            EnableTroubleshooting = true
+            EnableTroubleshooting = true,
+            HumanBackupNumber = request.ForwardingNumber.Trim()
         };
         await _unitOfWork.Repository<AgentProfile>().AddAsync(agentProfile, cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        string? transactionId = null;
-        string? checkoutUrl = null;
-        if (!string.IsNullOrEmpty(paddleCustomerId))
-        {
-            var txResult = await _paddleService.CreateCheckoutTransactionAsync(
-                plan.PaddlePriceId, paddleCustomerId, null, cancellationToken);
-            if (txResult.IsSuccess && txResult.Data != null)
-            {
-                transactionId = txResult.Data.Id;
-                checkoutUrl = txResult.Data.Checkout?.Url;
-            }
-        }
+        _logger.LogInformation("Pending user {UserId} ({Email}) registered for plan {Plan}, awaiting admin approval",
+            user.Id, user.Email, plan.Name);
 
-        var loginResult = await _authService.GenerateTokensForUserAsync(user.Id, null, cancellationToken);
+        // Notify admin of new registration via SignalR
+        _ = _adminNotifications.NotifyNewUserSignupAsync(user.Id, user.Email, request.Name);
+
+        // Send confirmation email to admin
+        var adminEmailHtml = $@"
+            <div style='font-family: sans-serif; max-width: 600px; margin: 0 auto;'>
+                <h2 style='color: #1e293b;'>New Registration Pending Approval</h2>
+                <table style='width: 100%; border-collapse: collapse;'>
+                    <tr><td style='padding: 8px; font-weight: bold;'>Name:</td><td style='padding: 8px;'>{user.Name}</td></tr>
+                    <tr><td style='padding: 8px; font-weight: bold;'>Email:</td><td style='padding: 8px;'>{user.Email}</td></tr>
+                    <tr><td style='padding: 8px; font-weight: bold;'>Business:</td><td style='padding: 8px;'>{request.BusinessName.Trim()}</td></tr>
+                    <tr><td style='padding: 8px; font-weight: bold;'>Country:</td><td style='padding: 8px;'>{request.Country.Trim().ToUpperInvariant()}</td></tr>
+                    <tr><td style='padding: 8px; font-weight: bold;'>Forwarding #:</td><td style='padding: 8px;'>{request.ForwardingNumber.Trim()}</td></tr>
+                    <tr><td style='padding: 8px; font-weight: bold;'>Selected Plan:</td><td style='padding: 8px;'>{plan.Name} (${plan.DisplayPrice}/mo)</td></tr>
+                </table>
+                <p style='margin-top: 16px;'>
+                    <a href='https://speakhalo.com/admin/users/{user.Id}' style='background: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px;'>Review in Admin Panel</a>
+                </p>
+            </div>";
+        _ = _emailService.SendEmailAsync("support@speakhalo.com", $"New Registration: {user.Name} - {plan.Name}", adminEmailHtml);
+
+        // Send confirmation email to user
+        var userEmailHtml = $@"
+            <div style='font-family: sans-serif; max-width: 600px; margin: 0 auto;'>
+                <h2 style='color: #1e293b;'>Thanks for Signing Up!</h2>
+                <p>Hi {user.Name},</p>
+                <p>We've received your registration for the <strong>{plan.Name}</strong> plan. Our team is reviewing your application and you'll hear back from us shortly.</p>
+                <p>Once approved, you'll receive an email with instructions to sign in and get started.</p>
+                <p style='color: #64748b; font-size: 14px; margin-top: 24px;'>If you have any questions, email us at support@speakhalo.com.</p>
+                <p style='color: #64748b; font-size: 14px;'>The SpeakHalo Team</p>
+            </div>";
+        _ = _emailService.SendEmailAsync(user.Email, "SpeakHalo - Registration Received", userEmailHtml);
 
         return Ok(new
         {
-            transactionId,
-            checkoutUrl,
-            accessToken = loginResult.IsSuccess ? loginResult.Data?.AccessToken : null,
-            refreshToken = loginResult.IsSuccess ? loginResult.Data?.RefreshToken : null,
-            userId = user.Id
+            message = "Registration submitted successfully. Our team will review your application and you'll receive an email once approved.",
+            status = "pending_review"
         });
     }
 
@@ -447,7 +477,7 @@ public class SubscriptionController : ControllerBase
     }
 
     /// <summary>
-    /// Request a refund (user-initiated, within 14-day window).
+    /// Request a refund (user-initiated, within 30-day window).
     /// </summary>
     [HttpPost("refund")]
     public async Task<IActionResult> RequestRefund(
@@ -470,8 +500,8 @@ public class SubscriptionController : ControllerBase
         if (sub.RefundedAt.HasValue)
             return BadRequest(new { error = "Already refunded" });
 
-        if ((DateTime.UtcNow - sub.FirstPaymentAt.Value).TotalDays > 14)
-            return BadRequest(new { error = "Refund window (14 days) has expired" });
+        if ((DateTime.UtcNow - sub.FirstPaymentAt.Value).TotalDays > 30)
+            return BadRequest(new { error = "Refund window (30 days) has expired" });
 
         sub.RefundedAt = DateTime.UtcNow;
         sub.RefundReason = request.Reason;

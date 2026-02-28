@@ -481,6 +481,9 @@ app.UseCookieConsentValidation(options =>
     options.AddConsentHeaders = app.Environment.IsDevelopment();
     options.UseDefaultRules = true;
 
+    options.ExcludedPaths.Add("/api/v1/admin");
+    options.ExcludedPaths.Add("/api/v1/webhooks");
+
     options.PathConsentRules["/api/v1/analytics"] = CookieCategory.Analytics;
     options.PathConsentRules["/api/v1/marketing"] = CookieCategory.Marketing;
     options.PathConsentRules["/api/v1/social"] = CookieCategory.SocialMedia;

@@ -6,7 +6,8 @@ using Xunit;
 
 namespace SpeakHalo.IntegrationTests;
 
-public class HealthCheckTests : IClassFixture<SpeakHaloWebApplicationFactory>
+[Collection("Integration")]
+public class HealthCheckTests
 {
     private readonly HttpClient _client;
 
@@ -16,10 +17,10 @@ public class HealthCheckTests : IClassFixture<SpeakHaloWebApplicationFactory>
     }
 
     [Fact]
-    public async Task HealthCheck_ShouldReturnOk()
+    public async Task HealthCheckLive_ShouldReturnOk()
     {
-        // Act
-        var response = await _client.GetAsync("/health");
+        // Act - /health/live only checks database connectivity
+        var response = await _client.GetAsync("/health/live");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -28,14 +29,12 @@ public class HealthCheckTests : IClassFixture<SpeakHaloWebApplicationFactory>
     [Fact]
     public async Task HealthCheck_ShouldReturnJsonWithStatus()
     {
-        // Act
+        // Act - /health includes external services which may be unavailable in tests
         var response = await _client.GetAsync("/health");
         var content = await response.Content.ReadAsStringAsync();
 
-        // Assert
+        // Assert - should return JSON regardless of status (200 or 503)
         content.Should().NotBeNullOrEmpty();
-
-        // Try to parse as JSON
         var parsed = JsonSerializer.Deserialize<JsonElement>(content);
         parsed.ValueKind.Should().Be(JsonValueKind.Object);
     }

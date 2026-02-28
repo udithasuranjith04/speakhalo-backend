@@ -4184,6 +4184,9 @@ namespace SpeakHalo.Infrastructure.Migrations
                     b.Property<DateTime?>("CookieConsentAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Country")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 

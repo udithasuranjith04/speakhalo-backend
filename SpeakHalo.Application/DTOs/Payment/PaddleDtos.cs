@@ -91,6 +91,8 @@ public class PublicCheckoutRequest
     public string Password { get; set; } = string.Empty;
     public string BusinessName { get; set; } = string.Empty;
     public string PricingPlanId { get; set; } = string.Empty;
+    public string? Country { get; set; }
+    public string? ForwardingNumber { get; set; }
 }
 
 public class CreateCheckoutResponse
@@ -161,4 +163,6 @@ public class RegisterTrialRequest
     public string Password { get; set; } = string.Empty;
     public string BusinessName { get; set; } = string.Empty;
     public string Token { get; set; } = string.Empty;
+    public string? Country { get; set; }
+    public string? ForwardingNumber { get; set; }
 }

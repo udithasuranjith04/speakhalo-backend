@@ -38,18 +38,29 @@ public class RateLimitingMiddleware
         _cleanupTimer = new Timer(CleanupOldEntries, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
     }
 
+    private readonly IHostEnvironment _environment;
+
     public RateLimitingMiddleware(
         RequestDelegate next,
         ILogger<RateLimitingMiddleware> logger,
-        IDistributedCache cache)
+        IDistributedCache cache,
+        IHostEnvironment environment)
     {
         _next = next;
         _logger = logger;
         _cache = cache;
+        _environment = environment;
     }
 
     public async Task InvokeAsync(HttpContext context)
     {
+        // Skip rate limiting entirely in Testing environment
+        if (_environment.EnvironmentName == "Testing")
+        {
+            await _next(context);
+            return;
+        }
+
         // Skip rate limiting for health checks, Hangfire dashboard, and CORS preflight
         if (context.Request.Path.StartsWithSegments("/health") ||
             context.Request.Path.StartsWithSegments("/hangfire") ||

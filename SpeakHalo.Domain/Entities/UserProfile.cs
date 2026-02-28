@@ -28,6 +28,8 @@ public class UserProfile : BaseEntity
 
     public bool CallerRecognitionEnabled { get; set; } = false;
 
+    public string? Country { get; set; }
+
     public string? CookieConsent { get; set; }
     public DateTime? CookieConsentAt { get; set; }
 

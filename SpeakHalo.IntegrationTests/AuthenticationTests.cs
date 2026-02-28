@@ -7,12 +7,15 @@ using Xunit;
 
 namespace SpeakHalo.IntegrationTests;
 
-public class AuthenticationTests : IClassFixture<SpeakHaloWebApplicationFactory>
+[Collection("Integration")]
+public class AuthenticationTests
 {
+    private readonly SpeakHaloWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
     public AuthenticationTests(SpeakHaloWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -36,18 +39,31 @@ public class AuthenticationTests : IClassFixture<SpeakHaloWebApplicationFactory>
     [Fact]
     public async Task Login_WithSeededUser_ShouldReturnToken()
     {
-        // Arrange - use the seeded test user from WebApplicationFactory
+        // Arrange - use the seeded Owner user with proper BCrypt password
         var loginRequest = new LoginRequest
         {
-            Email = "test@example.com",
-            Password = "hashed_password" // Note: seeded user has a plain hashed_password value, login will fail
+            Email = SpeakHaloWebApplicationFactory.OwnerEmail,
+            Password = SpeakHaloWebApplicationFactory.TestPassword
         };
 
         // Act
         var response = await _client.PostAsJsonAsync("/api/v1/auth/login", loginRequest);
 
-        // Assert - Expected to fail because seeded user has a raw hash, not a real password
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonSerializer.Deserialize<JsonElement>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        // API response wrapper: { isSuccess, data, message }
+        if (json.TryGetProperty("data", out var data))
+        {
+            data.GetProperty("accessToken").GetString().Should().NotBeNullOrEmpty();
+            data.GetProperty("refreshToken").GetString().Should().NotBeNullOrEmpty();
+        }
+        else
+        {
+            json.GetProperty("accessToken").GetString().Should().NotBeNullOrEmpty();
+        }
     }
 
     [Fact]
