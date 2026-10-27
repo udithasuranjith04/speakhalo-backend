@@ -6,7 +6,7 @@ DB_HOST="${DATABASE_HOST:?DATABASE_HOST environment variable is required}"
 DB_PORT="${DATABASE_PORT:-5432}"
 DB_NAME="${DATABASE_NAME:-speakhalo}"
 DB_USER="${DATABASE_USER:?DATABASE_USER environment variable is required}"
-DB_PASSWORD="${DATABASE_PASSWORD:?DATABASE_PASSWORD environment variable is required}"
+DB_PASSWORD="${DB_PASSWORD:?Set DB_PASSWORD before running}"
 
 echo "Creating SpeakHalo database tables..."
 echo "Host: $DB_HOST"

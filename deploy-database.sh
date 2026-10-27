@@ -15,7 +15,7 @@ DB_HOST="your-db-host.example.com"
 DB_PORT="25060"
 DB_NAME="speakhalo"
 DB_USER="doadmin"
-DB_PASSWORD="YOUR_DB_PASSWORD"
+DB_PASSWORD="${DB_PASSWORD:?Set DB_PASSWORD before running}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  SpeakHalo Database Deployment${NC}"
